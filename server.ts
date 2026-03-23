@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 
 import items from 'data/items.json' with { type: 'json' };
+import { config } from 'src/config.ts';
 import { Item } from 'src/types.ts';
 import { ItemsGetInQuerySchema, ItemUpdateInSchema } from 'src/validation.ts';
 import { treeifyError, ZodError } from 'zod';
@@ -163,7 +164,7 @@ fastify.put<ItemUpdateRequest>('/items/:id', (request, reply) => {
   }
 });
 
-const port = Number(process.env.port) ?? 8080;
+const port = config.port;
 
 fastify.listen({ port }, function (err, _address) {
   if (err) {
