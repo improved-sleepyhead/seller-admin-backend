@@ -1,4 +1,4 @@
-import Fastify, { FastifyReply } from 'fastify';
+import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
@@ -109,6 +109,54 @@ const writeSseEvent = (
 
   reply.raw.write(`event: ${event}\n`);
   reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+};
+
+const createClientAbortHandle = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} => {
+  const controller = new AbortController();
+
+  const abortRequest = () => {
+    if (controller.signal.aborted) {
+      return;
+    }
+
+    const abortError = new Error('The client connection was closed.');
+    abortError.name = 'AbortError';
+    controller.abort(abortError);
+
+    request.log.info(
+      {
+        endpoint: request.url,
+      },
+      'Client disconnected; aborting AI request.',
+    );
+  };
+
+  const handleRequestAbort = () => {
+    abortRequest();
+  };
+
+  const handleReplyClose = () => {
+    if (!reply.raw.writableEnded) {
+      abortRequest();
+    }
+  };
+
+  request.raw.on('aborted', handleRequestAbort);
+  reply.raw.on('close', handleReplyClose);
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      request.raw.off('aborted', handleRequestAbort);
+      reply.raw.off('close', handleReplyClose);
+    },
+  };
 };
 
 export const buildApp = async () => {
@@ -241,16 +289,30 @@ export const buildApp = async () => {
 
   fastify.get('/api/ai/status', () => getAiStatusResponse(openRouterClient));
 
-  fastify.post('/api/ai/description', async request => {
+  fastify.post('/api/ai/description', async (request, reply) => {
     const { item } = AiDescriptionRequestSchema.parse(request.body ?? {});
 
-    return generateDescriptionSuggestion(openRouterClient, item);
+    const abortHandle = createClientAbortHandle(request, reply);
+    try {
+      return await generateDescriptionSuggestion(openRouterClient, item, {
+        signal: abortHandle.signal,
+      });
+    } finally {
+      abortHandle.cleanup();
+    }
   });
 
-  fastify.post('/api/ai/price', async request => {
+  fastify.post('/api/ai/price', async (request, reply) => {
     const { item } = AiPriceRequestSchema.parse(request.body ?? {});
 
-    return generatePriceSuggestion(openRouterClient, item);
+    const abortHandle = createClientAbortHandle(request, reply);
+    try {
+      return await generatePriceSuggestion(openRouterClient, item, {
+        signal: abortHandle.signal,
+      });
+    } finally {
+      abortHandle.cleanup();
+    }
   });
 
   fastify.post('/api/ai/chat', async (request, reply) => {
@@ -259,14 +321,22 @@ export const buildApp = async () => {
     );
 
     if (!requestAcceptsEventStream(request.headers.accept)) {
-      return generateChatResponse(openRouterClient, {
-        item,
-        messages,
-        userMessage,
-      });
+      const abortHandle = createClientAbortHandle(request, reply);
+
+      try {
+        return await generateChatResponse(openRouterClient, {
+          item,
+          messages,
+          userMessage,
+          signal: abortHandle.signal,
+        });
+      } finally {
+        abortHandle.cleanup();
+      }
     }
 
     openRouterClient.assertAvailable();
+    const abortHandle = createClientAbortHandle(request, reply);
 
     reply.hijack();
     reply.raw.statusCode = 200;
@@ -281,6 +351,7 @@ export const buildApp = async () => {
         item,
         messages,
         userMessage,
+        signal: abortHandle.signal,
         onEvent: event => writeSseEvent(reply, event.event, event.data),
       });
     } catch (error) {
@@ -294,7 +365,11 @@ export const buildApp = async () => {
 
       writeSseEvent(reply, 'error', body);
     } finally {
-      reply.raw.end();
+      abortHandle.cleanup();
+
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+        reply.raw.end();
+      }
     }
   });
 

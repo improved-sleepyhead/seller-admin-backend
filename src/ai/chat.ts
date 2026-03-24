@@ -127,10 +127,12 @@ export const generateChatResponse = async (
     item,
     messages,
     userMessage,
+    signal,
   }: {
     item: AiPromptItem;
     messages: AiChatHistoryMessage[];
     userMessage: string;
+    signal?: AbortSignal;
   },
 ): Promise<AiChatResponse> => {
   const completion = await openRouterClient.createTextCompletion({
@@ -140,6 +142,7 @@ export const generateChatResponse = async (
       messages,
       userMessage,
     }),
+    signal,
     responseFormat: {
       type: 'json_schema',
       json_schema: {
@@ -166,11 +169,13 @@ export const streamChatResponse = async (
     messages,
     userMessage,
     onEvent,
+    signal,
   }: {
     item: AiPromptItem;
     messages: AiChatHistoryMessage[];
     userMessage: string;
     onEvent: (event: AiChatStreamEvent) => void | Promise<void>;
+    signal?: AbortSignal;
   },
 ): Promise<OpenRouterTextCompletionStreamResult> => {
   let totalContentLength = 0;
@@ -183,6 +188,7 @@ export const streamChatResponse = async (
         messages,
         userMessage,
       }),
+      signal,
     },
     {
       onResponseStart: async ({ model }) => {

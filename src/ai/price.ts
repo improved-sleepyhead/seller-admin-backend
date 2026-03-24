@@ -105,10 +105,14 @@ export const normalizePriceSuggestion = (
 export const generatePriceSuggestion = async (
   openRouterClient: OpenRouterClient,
   item: AiPromptItem,
+  options?: {
+    signal?: AbortSignal;
+  },
 ): Promise<AiPriceResponse> => {
   const completion = await openRouterClient.createTextCompletion({
     endpoint: 'price',
     messages: buildPricePromptMessages(item),
+    signal: options?.signal,
     responseFormat: {
       type: 'json_schema',
       json_schema: {

@@ -74,10 +74,14 @@ export const normalizeDescriptionSuggestion = (value: string): string => {
 export const generateDescriptionSuggestion = async (
   openRouterClient: OpenRouterClient,
   item: AiPromptItem,
+  options?: {
+    signal?: AbortSignal;
+  },
 ): Promise<AiDescriptionResponse> => {
   const completion = await openRouterClient.createTextCompletion({
     endpoint: 'description',
     messages: buildDescriptionPromptMessages(item),
+    signal: options?.signal,
     responseFormat: {
       type: 'json_schema',
       json_schema: {

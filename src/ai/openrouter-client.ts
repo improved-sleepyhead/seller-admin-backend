@@ -710,6 +710,7 @@ export const createOpenRouterClient = (
       let usage: OpenRouterUsage | undefined;
       let responseStarted = false;
       let receivedDone = false;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
       const emitResponseStart = async () => {
         if (!generationId || responseStarted) {
@@ -764,7 +765,7 @@ export const createOpenRouterClient = (
           throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
         }
 
-        const reader = response.body.getReader();
+        reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
 
@@ -903,6 +904,7 @@ export const createOpenRouterClient = (
 
         throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
       } finally {
+        await reader?.cancel().catch(() => undefined);
         cleanup();
       }
     },
