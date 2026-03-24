@@ -163,9 +163,7 @@ export const buildApp = async () => {
         })
         .slice(skip, skip + limit)
         .map(item => ({
-          category: item.category,
-          title: item.title,
-          price: item.price,
+          ...item,
           needsRevision: doesItemNeedRevision(item),
         })),
       total: filteredItems.length,
