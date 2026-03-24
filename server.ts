@@ -15,14 +15,48 @@ const fastify = Fastify({
 
 await fastify.register((await import('@fastify/middie')).default);
 
+const CORS_ALLOWED_METHODS = 'GET,PUT,POST,OPTIONS';
+const CORS_ALLOWED_HEADERS = 'Content-Type';
+
+const resolveAllowedOrigin = (requestOrigin: string | undefined): string | null => {
+  const allowedOrigins = config.cors.allowedOrigins;
+
+  if (allowedOrigins.includes('*')) {
+    return '*';
+  }
+
+  if (!requestOrigin) {
+    return null;
+  }
+
+  return allowedOrigins.includes(requestOrigin) ? requestOrigin : null;
+};
+
 // Искуственная задержка ответов, чтобы можно было протестировать состояния загрузки
 fastify.use((_, __, next) =>
   new Promise(res => setTimeout(res, 300 + Math.random() * 700)).then(next),
 );
 
-// Настройка CORS
-fastify.use((_, reply, next) => {
-  reply.setHeader('Access-Control-Allow-Origin', '*');
+// Настройка CORS и preflight
+fastify.use((request, reply, next) => {
+  const allowedOrigin = resolveAllowedOrigin(request.headers.origin);
+
+  if (allowedOrigin) {
+    reply.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    reply.setHeader('Access-Control-Allow-Methods', CORS_ALLOWED_METHODS);
+    reply.setHeader('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS);
+
+    if (allowedOrigin !== '*') {
+      reply.setHeader('Vary', 'Origin');
+    }
+  }
+
+  if (request.method === 'OPTIONS') {
+    reply.statusCode = 204;
+    reply.end();
+    return;
+  }
+
   next();
 });
 
