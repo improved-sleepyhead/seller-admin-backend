@@ -78,6 +78,21 @@ const readResponseStream = async (response: Response): Promise<string> => {
   return body;
 };
 
+const waitForCondition = async (
+  predicate: () => boolean,
+  timeoutMs = 1500,
+): Promise<void> => {
+  const startedAt = Date.now();
+
+  while (!predicate()) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error('Timed out waiting for the expected condition.');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+};
+
 const parseSseEvents = (
   rawBody: string,
 ): Array<{ event: string; data: Record<string, unknown> }> =>
@@ -705,6 +720,165 @@ test('POST /api/ai/chat emits SSE error event when provider stream becomes inval
     ['meta', 'chunk', 'error'],
   );
   assert.deepEqual(events.at(-1)?.data, {
+    success: false,
+    code: 'AI_PROVIDER_ERROR',
+    message: 'Failed to receive a valid response from AI provider.',
+  });
+});
+
+test('POST /api/ai/chat aborts the upstream stream after client disconnect', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  let upstreamAborted = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const requestUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+    if (requestUrl.includes('/chat/completions')) {
+      const signal = init?.signal;
+
+      assert.ok(signal);
+
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"Часть ответа"}}]}\n\n',
+              ),
+            );
+
+            signal.addEventListener(
+              'abort',
+              () => {
+                upstreamAborted = true;
+                controller.error(signal.reason);
+              },
+              { once: true },
+            );
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+          },
+        },
+      );
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  const abortController = new AbortController();
+  const response = await fetch(`${address}/api/ai/chat`, {
+    method: 'POST',
+    signal: abortController.signal,
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(validAiChatPayload),
+  });
+
+  const reader = response.body?.getReader();
+
+  assert.ok(reader);
+  await reader.read();
+
+  abortController.abort();
+  await waitForCondition(() => upstreamAborted);
+});
+
+test('POST /api/ai/description returns formatted 504 when the provider times out', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    timeoutMs: 25,
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  let timedOutUpstream = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal;
+
+      assert.ok(signal);
+
+      if (signal.aborted) {
+        timedOutUpstream = signal.reason?.name === 'TimeoutError';
+        reject(signal.reason);
+        return;
+      }
+
+      signal.addEventListener(
+        'abort',
+        () => {
+          timedOutUpstream = signal.reason?.name === 'TimeoutError';
+          reject(signal.reason);
+        },
+        { once: true },
+      );
+    })) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    payload: validAiPayload,
+  });
+
+  assert.equal(timedOutUpstream, true);
+  assert.equal(response.statusCode, 504);
+  assert.deepEqual(response.json(), {
     success: false,
     code: 'AI_PROVIDER_ERROR',
     message: 'Failed to receive a valid response from AI provider.',
