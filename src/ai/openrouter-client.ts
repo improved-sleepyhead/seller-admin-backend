@@ -201,6 +201,9 @@ type RequestSignalHandle = {
 
 const OPENROUTER_CHAT_COMPLETIONS_PATH = '/chat/completions';
 const OPENROUTER_ERROR_MESSAGE = 'Failed to receive a valid response from AI provider.';
+const toPublicAiEndpoint = (
+  endpoint: OpenRouterTextCompletionRequest['endpoint'],
+): string => `/api/ai/${endpoint}`;
 
 const ensureNoTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
@@ -590,7 +593,7 @@ export const createOpenRouterClient = (
         const generationId =
           payload && isRecord(payload) ? toOptionalString(payload.id) : undefined;
         const logMetadata = {
-          endpoint: request.endpoint,
+          endpoint: toPublicAiEndpoint(request.endpoint),
           model: requestedModel ?? model,
           durationMs: Date.now() - startedAt,
           provider: 'openrouter',
@@ -643,7 +646,7 @@ export const createOpenRouterClient = (
             logger,
             'warn',
             {
-              endpoint: request.endpoint,
+              endpoint: toPublicAiEndpoint(request.endpoint),
               model: requestedModel ?? model,
               durationMs: Date.now() - startedAt,
               provider: 'openrouter',
@@ -660,7 +663,7 @@ export const createOpenRouterClient = (
             logger,
             'warn',
             {
-              endpoint: request.endpoint,
+              endpoint: toPublicAiEndpoint(request.endpoint),
               model: requestedModel ?? model,
               durationMs: Date.now() - startedAt,
               provider: 'openrouter',
@@ -680,7 +683,7 @@ export const createOpenRouterClient = (
           logger,
           'error',
           {
-            endpoint: request.endpoint,
+            endpoint: toPublicAiEndpoint(request.endpoint),
             model: requestedModel ?? model,
             durationMs: Date.now() - startedAt,
             provider: 'openrouter',
@@ -737,7 +740,7 @@ export const createOpenRouterClient = (
         });
 
         const logMetadata = {
-          endpoint: request.endpoint,
+          endpoint: toPublicAiEndpoint(request.endpoint),
           model: requestedModel ?? model,
           durationMs: Date.now() - startedAt,
           provider: 'openrouter',
@@ -834,7 +837,7 @@ export const createOpenRouterClient = (
           logger,
           'info',
           {
-            endpoint: request.endpoint,
+            endpoint: toPublicAiEndpoint(request.endpoint),
             model: finalModel,
             durationMs: Date.now() - startedAt,
             provider: 'openrouter',
@@ -856,7 +859,7 @@ export const createOpenRouterClient = (
             logger,
             'warn',
             {
-              endpoint: request.endpoint,
+              endpoint: toPublicAiEndpoint(request.endpoint),
               model: requestedModel ?? model,
               durationMs: Date.now() - startedAt,
               provider: 'openrouter',
@@ -873,7 +876,7 @@ export const createOpenRouterClient = (
             logger,
             'warn',
             {
-              endpoint: request.endpoint,
+              endpoint: toPublicAiEndpoint(request.endpoint),
               model: requestedModel ?? model,
               durationMs: Date.now() - startedAt,
               provider: 'openrouter',
@@ -893,7 +896,7 @@ export const createOpenRouterClient = (
           logger,
           'error',
           {
-            endpoint: request.endpoint,
+            endpoint: toPublicAiEndpoint(request.endpoint),
             model: requestedModel ?? model,
             durationMs: Date.now() - startedAt,
             provider: 'openrouter',
