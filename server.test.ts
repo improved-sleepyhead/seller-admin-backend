@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 import items from 'data/items.json' with { type: 'json' };
-import { config } from 'src/config.ts';
+import { config, DEFAULT_DEV_CORS_ALLOWED_ORIGINS } from 'src/config.ts';
 import { buildApp } from './server.ts';
 
 const validAiPayload = {
@@ -177,6 +177,71 @@ test('request logs keep item query values out of the logged endpoint', async t =
   });
   assert.equal(rawLogs.includes('private-search-token'), false);
   assert.equal(rawLogs.includes('/items?q=private-search-token&limit=1'), false);
+});
+
+test('default CORS config uses explicit localhost dev origins instead of wildcard', () => {
+  assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('http://localhost:5173'), true);
+  assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('http://127.0.0.1:5173'), true);
+  assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('*'), false);
+});
+
+test('CORS allowlist returns headers for an explicitly allowed origin', async t => {
+  const originalAllowedOrigins = [...config.cors.allowedOrigins];
+  config.cors.allowedOrigins = ['http://localhost:5173'];
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    config.cors.allowedOrigins = originalAllowedOrigins;
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'OPTIONS',
+    url: '/items/1',
+    headers: {
+      Origin: 'http://localhost:5173',
+      'Access-Control-Request-Method': 'PUT',
+    },
+  });
+
+  assert.equal(response.statusCode, 204);
+  assert.equal(
+    response.headers['access-control-allow-origin'],
+    'http://localhost:5173',
+  );
+  assert.equal(
+    response.headers['access-control-allow-methods'],
+    'GET,PUT,POST,OPTIONS',
+  );
+  assert.equal(response.headers['access-control-allow-headers'], 'Content-Type');
+  assert.equal(response.headers.vary, 'Origin');
+});
+
+test('CORS allowlist skips headers for a disallowed origin', async t => {
+  const originalAllowedOrigins = [...config.cors.allowedOrigins];
+  config.cors.allowedOrigins = ['http://localhost:5173'];
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    config.cors.allowedOrigins = originalAllowedOrigins;
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'OPTIONS',
+    url: '/items/1',
+    headers: {
+      Origin: 'https://example.com',
+      'Access-Control-Request-Method': 'PUT',
+    },
+  });
+
+  assert.equal(response.statusCode, 204);
+  assert.equal(response.headers['access-control-allow-origin'], undefined);
+  assert.equal(response.headers['access-control-allow-methods'], undefined);
+  assert.equal(response.headers['access-control-allow-headers'], undefined);
 });
 
 test('AI logs contain safe metadata without secrets or user content', async t => {

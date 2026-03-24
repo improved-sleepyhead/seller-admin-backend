@@ -40,6 +40,15 @@ const parseCsvList = (value: string | undefined, fallback: string[]): string[] =
   return values.length ? values : fallback;
 };
 
+export const DEFAULT_DEV_CORS_ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:5173',
+];
+
 export type AppConfig = {
   port: number;
   cors: {
@@ -65,7 +74,10 @@ const aiEnabled = aiFeatureEnabled && Boolean(openrouterApiKey);
 export const config: AppConfig = {
   port: parsePositiveInt(env.PORT, 8080),
   cors: {
-    allowedOrigins: parseCsvList(env.CORS_ALLOWED_ORIGINS, ['*']),
+    allowedOrigins: parseCsvList(
+      env.CORS_ALLOWED_ORIGINS,
+      DEFAULT_DEV_CORS_ALLOWED_ORIGINS,
+    ),
   },
   ai: {
     enabled: aiEnabled,
