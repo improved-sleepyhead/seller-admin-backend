@@ -168,6 +168,8 @@ export const buildApp = async () => {
             comparisonValue =
               new Date(item1.createdAt).valueOf() -
               new Date(item2.createdAt).valueOf();
+          } else if (sortColumn === 'price') {
+            comparisonValue = (item1.price ?? 0) - (item2.price ?? 0);
           }
 
           return (sortDirection === 'desc' ? -1 : 1) * comparisonValue;
