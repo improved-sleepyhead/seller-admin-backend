@@ -386,7 +386,7 @@
         "Шаг 3: Убедиться, что секреты и полный user content не попали в лог."
       ],
       "dependencies": ["TASK-010", "TASK-015"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-021",
