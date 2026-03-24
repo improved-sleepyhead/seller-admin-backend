@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { AppError } from 'src/shared/errors/app-error.ts';
 
-import { createOpenRouterClient } from './openrouter.client.ts';
+import { createOpenRouterClient } from 'src/modules/ai/providers/openrouter/openrouter.client.ts';
 
 const createAiConfig = (overrides?: Partial<Parameters<typeof createOpenRouterClient>[0]>) => ({
   enabled: true,
