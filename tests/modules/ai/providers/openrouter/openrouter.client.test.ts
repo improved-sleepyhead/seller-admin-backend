@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
-import { AppError } from 'src/errors.ts';
+import { AppError } from 'src/shared/errors/app-error.ts';
+
+import { createOpenRouterClient } from 'src/modules/ai/providers/openrouter/openrouter.client.ts';
 
 const createAiConfig = (overrides?: Partial<Parameters<typeof createOpenRouterClient>[0]>) => ({
   enabled: true,

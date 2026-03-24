@@ -4,11 +4,16 @@ import test from 'node:test';
 import items from 'data/items.json' with { type: 'json' };
 import {
   buildChatPromptMessages,
+} from 'src/modules/ai/prompts/chat.prompt.ts';
+import {
   buildDescriptionPromptMessages,
+} from 'src/modules/ai/prompts/description.prompt.ts';
+import {
   buildPricePromptMessages,
-} from 'src/ai/ai-prompts.ts';
+} from 'src/modules/ai/prompts/price.prompt.ts';
+import type { Item } from 'src/modules/items/domain/item.model.ts';
 
-const item = items[0];
+const item = items[0] as Item;
 
 const assertSharedPromptContract = (messages: Array<{ role: string; content: unknown }>) => {
   assert.equal(messages[0]?.role, 'system');

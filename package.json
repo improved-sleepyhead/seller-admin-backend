@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx server.ts",
-    "test:smoke": "node --test --import tsx server.smoke.test.ts"
+    "test:smoke": "node --test --import tsx tests/server.smoke.test.ts"
   },
   "keywords": [],
   "author": "",
