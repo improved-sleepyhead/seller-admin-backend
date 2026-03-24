@@ -34,7 +34,7 @@
         "Шаг 3: Убедиться, что AI-конфиг читается без исключений и может вернуть disabled state."
       ],
       "dependencies": [],
-      "status": "done"
+      "status": "pending"
     },
     {
       "id": "TASK-002",
@@ -114,7 +114,7 @@
       "dependencies": [
         "TASK-004"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-006",
@@ -238,7 +238,7 @@
       "dependencies": [
         "TASK-001"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-012",
