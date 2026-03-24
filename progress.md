@@ -99,3 +99,11 @@
 1. Built prompts for `description`, `price`, and `chat` against the same item through `src/ai/ai-prompts.test.ts`.
 2. Verified all prompt variants include item context plus endpoint-specific task wording.
 3. Verified builders inject the shared system prompt themselves, so frontend does not need to send system instructions.
+
+2026-03-24 - TASK-013 done
+- Implemented `POST /api/ai/description` via the shared OpenRouter client and prompt builders with server-side response normalization to the stable `{ suggestion, model?, usage? }` contract.
+- Added schema-guided response formatting preference and normalization that accepts structured JSON output but still safely falls back to plain text when the provider returns a clean description string.
+- Test steps passed:
+1. Sent a valid `/api/ai/description` request with an empty `description` and verified a `200` response with string `suggestion`.
+2. Verified the returned `suggestion` is suitable for direct textarea insertion and the response includes normalized `model` and `usage` metadata.
+3. Sent an invalid payload and verified `400 VALIDATION_ERROR`.
