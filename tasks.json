@@ -254,7 +254,7 @@
         "Шаг 3: Отправить невалидный payload и проверить 400 VALIDATION_ERROR."
       ],
       "dependencies": ["TASK-009", "TASK-010", "TASK-012", "TASK-011"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-014",
