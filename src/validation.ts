@@ -1,6 +1,17 @@
 import { z } from 'zod';
-import { ITEM_CATEGORIES } from './constants.ts';
+import { INPUT_LIMITS, ITEM_CATEGORIES } from './constants.ts';
 import { ItemSortColumn, SortDirection } from './types.ts';
+
+const NonEmptyTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(INPUT_LIMITS.item.titleMaxLength);
+
+const OptionalDescriptionSchema = z
+  .string()
+  .max(INPUT_LIMITS.item.descriptionMaxLength)
+  .optional();
 
 const AutoTransmissionSchema = z.enum(['automatic', 'manual']);
 
@@ -67,8 +78,8 @@ export const ItemsGetInQuerySchema = z.object({
 export const ItemUpdateInSchema = z
   .object({
     category: CategorySchema,
-    title: z.string(),
-    description: z.string().optional(),
+    title: NonEmptyTitleSchema,
+    description: OptionalDescriptionSchema,
     price: z.number().min(0),
   })
   .and(
@@ -87,3 +98,32 @@ export const ItemUpdateInSchema = z
       }),
     ]),
   );
+
+export const AiItemInputSchema = ItemUpdateInSchema;
+
+const AiHistoryMessageSchema = z.strictObject({
+  role: z.enum(['user', 'assistant']),
+  content: z
+    .string()
+    .trim()
+    .min(1)
+    .max(INPUT_LIMITS.ai.historyMessageMaxLength),
+});
+
+export const AiDescriptionRequestSchema = z.strictObject({
+  item: AiItemInputSchema,
+});
+
+export const AiPriceRequestSchema = z.strictObject({
+  item: AiItemInputSchema,
+});
+
+export const AiChatRequestSchema = z.strictObject({
+  item: AiItemInputSchema,
+  messages: z.array(AiHistoryMessageSchema).max(INPUT_LIMITS.ai.historyMaxItems),
+  userMessage: z
+    .string()
+    .trim()
+    .min(1)
+    .max(INPUT_LIMITS.ai.userMessageMaxLength),
+});

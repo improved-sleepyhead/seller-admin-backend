@@ -5,12 +5,19 @@ import items from 'data/items.json' with { type: 'json' };
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
 import {
+  aiUnavailableError,
   notFoundError,
   toApiErrorResponse,
   validationError,
 } from 'src/errors.ts';
 import { Item } from 'src/types.ts';
-import { ItemsGetInQuerySchema, ItemUpdateInSchema } from 'src/validation.ts';
+import {
+  AiChatRequestSchema,
+  AiDescriptionRequestSchema,
+  AiPriceRequestSchema,
+  ItemUpdateInSchema,
+  ItemsGetInQuerySchema,
+} from 'src/validation.ts';
 import { doesItemNeedRevision } from './src/utils.ts';
 
 const ITEMS = items as Item[];
@@ -202,6 +209,25 @@ export const buildApp = async () => {
   });
 
   fastify.get('/api/ai/status', () => getAiStatusResponse());
+
+  const assertAiUnavailable = () => {
+    throw aiUnavailableError('AI features are currently unavailable.');
+  };
+
+  fastify.post('/api/ai/description', request => {
+    AiDescriptionRequestSchema.parse(request.body ?? {});
+    assertAiUnavailable();
+  });
+
+  fastify.post('/api/ai/price', request => {
+    AiPriceRequestSchema.parse(request.body ?? {});
+    assertAiUnavailable();
+  });
+
+  fastify.post('/api/ai/chat', request => {
+    AiChatRequestSchema.parse(request.body ?? {});
+    assertAiUnavailable();
+  });
 
   return fastify;
 };

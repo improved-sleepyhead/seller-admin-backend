@@ -33,6 +33,11 @@ export const validationError = (message: string, details?: unknown): AppError =>
 export const notFoundError = (message: string, details?: unknown): AppError =>
   new AppError(404, 'NOT_FOUND', message, details);
 
+export const aiUnavailableError = (
+  message: string,
+  details?: unknown,
+): AppError => new AppError(503, 'AI_UNAVAILABLE', message, details);
+
 export const toApiErrorResponse = (
   error: unknown,
 ): { statusCode: number; body: ApiErrorResponse } => {

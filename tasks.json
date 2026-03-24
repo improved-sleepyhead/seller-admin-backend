@@ -182,7 +182,7 @@
         "Шаг 3: Проверить, что оба сценария возвращают 400 с понятным code и message."
       ],
       "dependencies": ["TASK-003"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-010",
