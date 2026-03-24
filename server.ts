@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
 import { config } from 'src/config.ts';
@@ -198,13 +199,19 @@ export const buildApp = async () => {
 };
 
 const port = config.port;
-const fastify = await buildApp();
+const isMainModule =
+  typeof process.argv[1] === 'string' &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
 
-fastify.listen({ port }, function (err, _address) {
-  if (err) {
-    fastify.log.error(err);
-    process.exit(1);
-  }
+if (isMainModule) {
+  const fastify = await buildApp();
 
-  fastify.log.debug(`Server is listening on port ${port}`);
-});
+  fastify.listen({ port }, function (err, _address) {
+    if (err) {
+      fastify.log.error(err);
+      process.exit(1);
+    }
+
+    fastify.log.debug(`Server is listening on port ${port}`);
+  });
+}
