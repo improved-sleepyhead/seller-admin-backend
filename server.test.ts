@@ -9,6 +9,21 @@ const validAiPayload = {
   item: items[0],
 };
 
+const validAiChatPayload = {
+  item: items[0],
+  messages: [
+    {
+      role: 'assistant',
+      content: 'Здравствуйте. Уточните, что для вас важнее: цена или состояние?',
+    },
+    {
+      role: 'user',
+      content: 'Скорее состояние и прозрачная история.',
+    },
+  ],
+  userMessage: 'Сформулируй короткий ответ для покупателя про состояние машины.',
+};
+
 const createMockResponse = (body: unknown, init?: ResponseInit): Response =>
   new Response(JSON.stringify(body), {
     headers: {
@@ -341,6 +356,115 @@ test('POST /api/ai/price returns AI_PROVIDER_ERROR for invalid provider response
 
   assert.equal(response.statusCode, 502);
   assert.equal(response.json().code, 'AI_PROVIDER_ERROR');
+});
+
+test('POST /api/ai/chat returns normalized assistant message', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  let capturedRequestBody: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    capturedRequestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+    return createMockResponse({
+      id: 'gen-chat',
+      model: 'openrouter/test-model',
+      usage: {
+        prompt_tokens: 55,
+        completion_tokens: 18,
+        total_tokens: 73,
+      },
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              message: {
+                role: 'assistant',
+                content:
+                  'Состояние можно описать как аккуратное: автомобиль обслуживался, салон чистый, история понятная.',
+              },
+            }),
+          },
+        },
+      ],
+    });
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/chat',
+    payload: validAiChatPayload,
+  });
+
+  assert.equal(response.statusCode, 200);
+
+  const body = response.json();
+
+  assert.deepEqual(body.message, {
+    role: 'assistant',
+    content:
+      'Состояние можно описать как аккуратное: автомобиль обслуживался, салон чистый, история понятная.',
+  });
+  assert.equal(body.model, 'openrouter/test-model');
+  assert.deepEqual(body.usage, {
+    inputTokens: 55,
+    outputTokens: 18,
+    totalTokens: 73,
+  });
+
+  const responseFormat = capturedRequestBody?.response_format as
+    | { type?: string }
+    | undefined;
+
+  assert.equal(responseFormat?.type, 'json_schema');
+});
+
+test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/chat',
+    payload: {
+      ...validAiChatPayload,
+      messages: [
+        {
+          role: 'system',
+          content: 'Нельзя принимать system из frontend.',
+        },
+      ],
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.json().code, 'VALIDATION_ERROR');
 });
 
 test('GET /items keeps working after an AI endpoint failure', async t => {

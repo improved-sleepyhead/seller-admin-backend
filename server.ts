@@ -2,13 +2,13 @@ import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
+import { generateChatResponse } from 'src/ai/chat.ts';
 import { generateDescriptionSuggestion } from 'src/ai/description.ts';
 import { generatePriceSuggestion } from 'src/ai/price.ts';
 import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
 import {
-  aiProviderError,
   notFoundError,
   toApiErrorResponse,
   validationError,
@@ -217,12 +217,6 @@ export const buildApp = async () => {
 
   fastify.get('/api/ai/status', () => getAiStatusResponse(openRouterClient));
 
-  const failPendingAiRequest = (parseBody: () => void) => {
-    parseBody();
-    openRouterClient.assertAvailable();
-    throw aiProviderError('Failed to receive a valid response from AI provider.');
-  };
-
   fastify.post('/api/ai/description', async request => {
     const { item } = AiDescriptionRequestSchema.parse(request.body ?? {});
 
@@ -235,9 +229,15 @@ export const buildApp = async () => {
     return generatePriceSuggestion(openRouterClient, item);
   });
 
-  fastify.post('/api/ai/chat', request => {
-    failPendingAiRequest(() => {
-      AiChatRequestSchema.parse(request.body ?? {});
+  fastify.post('/api/ai/chat', async request => {
+    const { item, messages, userMessage } = AiChatRequestSchema.parse(
+      request.body ?? {},
+    );
+
+    return generateChatResponse(openRouterClient, {
+      item,
+      messages,
+      userMessage,
     });
   });
 
