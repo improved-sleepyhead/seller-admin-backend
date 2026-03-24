@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
 import { config } from 'src/config.ts';
+import { toAdDetailsDto } from 'src/item-dto.ts';
 import {
   notFoundError,
   toApiErrorResponse,
@@ -129,10 +130,7 @@ export const buildApp = async () => {
       throw notFoundError("Item with requested id doesn't exist.");
     }
 
-    return {
-      ...item,
-      needsRevision: doesItemNeedRevision(item),
-    };
+    return toAdDetailsDto(item);
   });
 
   fastify.get<ItemsGetRequest>('/items', request => {
