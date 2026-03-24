@@ -40,10 +40,12 @@ interface ItemGetRequest extends Fastify.RequestGenericInterface {
 interface ItemsGetRequest extends Fastify.RequestGenericInterface {
   Querystring: {
     q?: string;
-    limit?: string;
-    skip?: string;
-    categories?: string;
-    needsRevision?: string;
+    limit?: number;
+    skip?: number;
+    categories?: string[];
+    needsRevision?: boolean;
+    sortColumn?: 'title' | 'createdAt' | 'price';
+    sortDirection?: 'asc' | 'desc';
   };
 }
 

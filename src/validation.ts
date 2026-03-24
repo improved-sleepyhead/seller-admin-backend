@@ -35,31 +35,66 @@ export const ElectronicsEstateItemParamsSchema = z.strictObject({
 
 const CategorySchema = z.enum(Object.values(ITEM_CATEGORIES));
 
+const parseOptionalIntegerQueryParam = (value: unknown): unknown => {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    return value;
+  }
+
+  return Number(value);
+};
+
+const parseOptionalCategoriesQueryParam = (value: unknown): unknown => {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const categories = value.split(',').map(part => part.trim()).filter(Boolean);
+
+  return categories.length ? categories : undefined;
+};
+
+const parseOptionalBooleanQueryParam = (value: unknown): unknown => {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+
+  if (value === 'true' || value === '1') {
+    return true;
+  }
+
+  if (value === 'false' || value === '0') {
+    return false;
+  }
+
+  return value;
+};
+
 export const ItemsGetInQuerySchema = z.object({
   q: z.string().trim().optional().default(''),
-  limit: z
-    .string()
-    .optional()
-    .transform(val => (val ? parseInt(val, 10) : undefined))
-    .pipe(z.number().int().positive().optional().default(10)),
-  skip: z
-    .string()
-    .optional()
-    .transform(val => (val ? parseInt(val, 10) : undefined))
-    .pipe(z.number().int().min(0).optional().default(0)),
-  categories: z
-    .string()
-    .optional()
-    .transform(val => (val ? val.split(',').map(s => s.trim()) : undefined))
-    .pipe(z.array(CategorySchema).optional()),
-  needsRevision: z
-    .string()
-    .optional()
-    .transform(val => {
-      if (!val) return undefined;
-      return val === 'true' || val === '1';
-    })
-    .pipe(z.boolean().optional().default(false)),
+  limit: z.preprocess(
+    parseOptionalIntegerQueryParam,
+    z.number().int().positive().optional().default(10),
+  ),
+  skip: z.preprocess(
+    parseOptionalIntegerQueryParam,
+    z.number().int().min(0).optional().default(0),
+  ),
+  categories: z.preprocess(
+    parseOptionalCategoriesQueryParam,
+    z.array(CategorySchema).optional(),
+  ),
+  needsRevision: z.preprocess(
+    parseOptionalBooleanQueryParam,
+    z.boolean().optional().default(false),
+  ),
   sortColumn: z.enum<ItemSortColumn[]>(['title', 'createdAt', 'price']).optional(),
   sortDirection: z.enum<SortDirection[]>(['asc', 'desc']).optional(),
 });
