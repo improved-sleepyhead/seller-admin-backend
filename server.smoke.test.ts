@@ -4,18 +4,22 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import test from 'node:test';
 
 import items from 'data/items.json' with { type: 'json' };
-import { config } from 'src/config.ts';
+import {
+  config,
+} from 'src/shared/config/app-config.ts';
 import {
   AiChatResponseSchema,
   AiDescriptionResponseSchema,
   AiPriceResponseSchema,
   AiStatusResponseSchema,
-  ApiErrorResponseSchema,
-  ItemReadDtoSchema,
+} from 'src/modules/ai/contracts/ai-response.contract.ts';
+import { ItemReadDtoSchema } from 'src/modules/items/contracts/item-read.contract.ts';
+import {
   ItemsResponseSchema,
   ItemUpdateSuccessResponseSchema,
-} from 'src/public-api.ts';
-import { buildApp } from './server.ts';
+} from 'src/modules/items/contracts/item-response.contract.ts';
+import { ApiErrorResponseSchema } from 'src/shared/contracts/api-error.contract.ts';
+import { buildApp } from 'src/app/build-app.ts';
 
 type MockOpenRouterRequest = {
   authorizationHeader?: string;

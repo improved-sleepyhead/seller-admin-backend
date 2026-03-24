@@ -3,19 +3,22 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 import items from 'data/items.json' with { type: 'json' };
-import { config, DEFAULT_DEV_CORS_ALLOWED_ORIGINS } from 'src/config.ts';
 import {
-  AiChatResponseSchema,
-  AiChatStreamEventSchema,
-  AiDescriptionResponseSchema,
-  AiPriceResponseSchema,
-  AiStatusResponseSchema,
-  ApiErrorResponseSchema,
-  ItemReadDtoSchema,
+  DEFAULT_DEV_CORS_ALLOWED_ORIGINS,
+  config,
+} from 'src/shared/config/app-config.ts';
+import { AiChatResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
+import { AiDescriptionResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
+import { AiPriceResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
+import { AiStatusResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
+import { AiChatStreamEventSchema } from 'src/modules/ai/contracts/ai-stream.contract.ts';
+import { ItemReadDtoSchema } from 'src/modules/items/contracts/item-read.contract.ts';
+import {
   ItemsResponseSchema,
   ItemUpdateSuccessResponseSchema,
-} from 'src/public-api.ts';
-import { buildApp } from './server.ts';
+} from 'src/modules/items/contracts/item-response.contract.ts';
+import { ApiErrorResponseSchema } from 'src/shared/contracts/api-error.contract.ts';
+import { buildApp } from 'src/app/build-app.ts';
 
 const validAiPayload = {
   item: items[0],
