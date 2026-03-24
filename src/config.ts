@@ -3,6 +3,7 @@ const DEFAULT_AI_ENABLED = true;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 const DEFAULT_AI_TIMEOUT_MS = 15000;
+const DEFAULT_CORS_ALLOWED_ORIGINS = ['*'];
 
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
   if (!value) return fallback;
@@ -25,8 +26,22 @@ const parsePositiveInt = (
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const parseCsvList = (value: string | undefined, fallback: string[]): string[] => {
+  if (!value) return fallback;
+
+  const values = value
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+
+  return values.length ? values : fallback;
+};
+
 export type AppConfig = {
   port: number;
+  cors: {
+    allowedOrigins: string[];
+  };
   ai: {
     enabled: boolean;
     provider: 'openrouter' | null;
@@ -46,6 +61,12 @@ const aiEnabled = aiFeatureEnabled && Boolean(openrouterApiKey);
 
 export const config: AppConfig = {
   port: parsePositiveInt(process.env.PORT, DEFAULT_PORT),
+  cors: {
+    allowedOrigins: parseCsvList(
+      process.env.CORS_ALLOWED_ORIGINS,
+      DEFAULT_CORS_ALLOWED_ORIGINS,
+    ),
+  },
   ai: {
     enabled: aiEnabled,
     provider: aiEnabled ? 'openrouter' : null,
