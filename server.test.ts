@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 import items from 'data/items.json' with { type: 'json' };
@@ -120,6 +121,191 @@ const parseSseEvents = (
         data: JSON.parse(data) as Record<string, unknown>,
       };
     });
+
+const createLogCapture = () => {
+  const stream = new PassThrough();
+  const chunks: string[] = [];
+
+  stream.on('data', chunk => {
+    chunks.push(chunk.toString());
+  });
+
+  return {
+    stream,
+    getRawOutput: () => chunks.join(''),
+    getEntries: () =>
+      chunks
+        .join('')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => JSON.parse(line) as Record<string, unknown>),
+  };
+};
+
+test('request logs keep item query values out of the logged endpoint', async t => {
+  const logs = createLogCapture();
+  const app = await buildApp({
+    logger: {
+      stream: logs.stream,
+    },
+  });
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/items?q=private-search-token&limit=1',
+  });
+
+  assert.equal(response.statusCode, 200);
+
+  const rawLogs = logs.getRawOutput();
+  const entries = logs.getEntries();
+  const requestLog = entries.find(
+    entry =>
+      typeof entry.msg === 'string' &&
+      entry.msg.includes('incoming request'),
+  );
+
+  assert.ok(requestLog);
+  assert.deepEqual(requestLog.req, {
+    method: 'GET',
+    endpoint: '/items',
+  });
+  assert.equal(rawLogs.includes('private-search-token'), false);
+  assert.equal(rawLogs.includes('/items?q=private-search-token&limit=1'), false);
+});
+
+test('AI logs contain safe metadata without secrets or user content', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  const logs = createLogCapture();
+  const responses = [
+    createMockResponse({
+      id: 'gen-description',
+      model: 'openrouter/test-model',
+      usage: {
+        prompt_tokens: 21,
+        completion_tokens: 9,
+        total_tokens: 30,
+      },
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              suggestion: 'Нормализованное описание без лишних деталей.',
+            }),
+          },
+        },
+      ],
+    }),
+    createMockResponse(
+      {
+        error: {
+          message: 'provider-debug-secret-should-not-be-logged',
+        },
+      },
+      {
+        status: 500,
+      },
+    ),
+  ];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => responses.shift() as Response) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp({
+    logger: {
+      stream: logs.stream,
+    },
+  });
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const privatePayload = {
+    item: {
+      ...items[0],
+      title: 'private-item-title-token',
+      description: 'private-item-description-token',
+    },
+  };
+
+  const successResponse = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    payload: privatePayload,
+  });
+
+  const failedResponse = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    payload: privatePayload,
+  });
+
+  assert.equal(successResponse.statusCode, 200);
+  assert.equal(failedResponse.statusCode, 502);
+
+  const rawLogs = logs.getRawOutput();
+  const entries = logs.getEntries();
+  const successLog = entries.find(
+    entry => entry.msg === 'OpenRouter request completed.',
+  );
+  const upstreamFailureLog = entries.find(
+    entry => entry.msg === 'OpenRouter request returned an upstream error.',
+  );
+  const apiFailureLog = entries.find(
+    entry =>
+      entry.msg === 'Failed to receive a valid response from AI provider.' &&
+      entry.code === 'AI_PROVIDER_ERROR',
+  );
+
+  assert.ok(successLog);
+  assert.equal(successLog.endpoint, '/api/ai/description');
+  assert.equal(successLog.model, 'openrouter/test-model');
+  assert.equal(successLog.status, 200);
+  assert.deepEqual(successLog.usage, {
+    inputTokens: 21,
+    outputTokens: 9,
+    totalTokens: 30,
+  });
+
+  assert.ok(upstreamFailureLog);
+  assert.equal(upstreamFailureLog.endpoint, '/api/ai/description');
+  assert.equal(upstreamFailureLog.model, originalAiConfig.openrouter.model);
+  assert.equal(upstreamFailureLog.status, 500);
+
+  assert.ok(apiFailureLog);
+  assert.equal(apiFailureLog.endpoint, '/api/ai/description');
+  assert.equal(apiFailureLog.code, 'AI_PROVIDER_ERROR');
+  assert.equal('err' in apiFailureLog, false);
+
+  assert.equal(rawLogs.includes('test-openrouter-key'), false);
+  assert.equal(rawLogs.includes('private-item-title-token'), false);
+  assert.equal(rawLogs.includes('private-item-description-token'), false);
+  assert.equal(rawLogs.includes('provider-debug-secret-should-not-be-logged'), false);
+});
 
 test('AI endpoints return AI_UNAVAILABLE when AI config is disabled', async t => {
   const originalAiConfig = structuredClone(config.ai);

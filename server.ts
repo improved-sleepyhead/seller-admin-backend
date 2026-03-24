@@ -1,4 +1,8 @@
-import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
+import Fastify, {
+  FastifyReply,
+  FastifyRequest,
+  FastifyServerOptions,
+} from 'fastify';
 import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
@@ -12,6 +16,11 @@ import { generatePriceSuggestion } from 'src/ai/price.ts';
 import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
+import {
+  createLoggerOptions,
+  getRequestEndpoint,
+  logApiErrorResponse,
+} from 'src/logging.ts';
 import {
   notFoundError,
   toApiErrorResponse,
@@ -131,7 +140,7 @@ const createClientAbortHandle = (
 
     request.log.info(
       {
-        endpoint: request.url,
+        endpoint: getRequestEndpoint(request),
       },
       'Client disconnected; aborting AI request.',
     );
@@ -159,23 +168,22 @@ const createClientAbortHandle = (
   };
 };
 
-export const buildApp = async () => {
+export const buildApp = async (
+  options?: {
+    logger?: FastifyServerOptions['logger'];
+  },
+) => {
   const fastify = Fastify({
-    logger: true,
+    logger: createLoggerOptions(options?.logger),
   });
 
   await fastify.register((await import('@fastify/middie')).default);
 
   fastify.setErrorHandler((error, request, reply) => {
-    const { statusCode, body } = toApiErrorResponse(error);
+    const response = toApiErrorResponse(error);
 
-    if (statusCode >= 500) {
-      request.log.error({ err: error, code: body.code }, body.message);
-    } else {
-      request.log.info({ code: body.code }, body.message);
-    }
-
-    reply.status(statusCode).send(body);
+    logApiErrorResponse(request, response, error);
+    reply.status(response.statusCode).send(response.body);
   });
 
   // Искуственная задержка ответов, чтобы можно было протестировать состояния загрузки
@@ -355,15 +363,10 @@ export const buildApp = async () => {
         onEvent: event => writeSseEvent(reply, event.event, event.data),
       });
     } catch (error) {
-      const { statusCode, body } = toApiErrorResponse(error);
+      const response = toApiErrorResponse(error);
 
-      if (statusCode >= 500) {
-        request.log.error({ err: error, code: body.code }, body.message);
-      } else {
-        request.log.info({ code: body.code }, body.message);
-      }
-
-      writeSseEvent(reply, 'error', body);
+      logApiErrorResponse(request, response, error);
+      writeSseEvent(reply, 'error', response.body);
     } finally {
       abortHandle.cleanup();
 
