@@ -123,3 +123,11 @@
 1. Verified success responses for `GET /items`, `GET /items/:id`, `PUT /items/:id`, `GET /api/ai/status`, `POST /api/ai/description`, `POST /api/ai/price`, and `POST /api/ai/chat` through the shared Zod response schemas.
 2. Verified error responses for the same public contracts continue to use the stable `{ success: false, code, message, details? }` DTO, including `VALIDATION_ERROR`, `AI_UNAVAILABLE`, and `AI_PROVIDER_ERROR`.
 3. Re-ran `node --test --import tsx server.test.ts src/ai/*.test.ts` and confirmed the runtime-validation contract checks pass end-to-end, including normalization of legacy item params and backend-owned SSE chat events.
+
+2026-03-25 - TASK-024 done
+- Added `server.smoke.test.ts` with a dedicated live HTTP smoke/e2e suite for list, detail, full update, AI status, description, price, chat, and representative validation/unavailable error paths.
+- Added `npm run test:smoke` so the backend smoke checks can be run locally as a short pre-finish gate without touching the broader regression suite.
+- Test steps passed:
+1. Ran `npm run test:smoke` and confirmed the smoke/e2e suite passes on the current implementation.
+2. Verified the automated checks cover the happy-path contracts for `GET /items`, `GET /items/:id`, `PUT /items/:id`, `GET /api/ai/status`, `POST /api/ai/description`, `POST /api/ai/price`, and `POST /api/ai/chat`.
+3. Temporarily broke the `PUT /items/:id` success DTO in `server.ts`, re-ran the targeted smoke suite, confirmed it failed, then restored the contract and re-ran `npm run test:smoke` successfully.
