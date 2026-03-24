@@ -189,10 +189,7 @@ export const buildApp = async () => {
       throw notFoundError("Item with requested id doesn't exist.");
     }
 
-    const parsedData = ItemUpdateInSchema.parse({
-      category: ITEMS[itemIndex].category,
-      ...(request.body as {}),
-    });
+    const parsedData = ItemUpdateInSchema.parse(request.body ?? {});
 
     ITEMS[itemIndex] = {
       id: ITEMS[itemIndex].id,

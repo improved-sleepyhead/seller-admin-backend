@@ -75,15 +75,15 @@ export const ItemUpdateInSchema = z
     z.discriminatedUnion('category', [
       z.object({
         category: z.literal(ITEM_CATEGORIES.AUTO),
-        params: AutoItemParamsSchema.partial(),
+        params: AutoItemParamsSchema,
       }),
       z.object({
         category: z.literal(ITEM_CATEGORIES.REAL_ESTATE),
-        params: RealEstateItemParamsSchema.partial(),
+        params: RealEstateItemParamsSchema,
       }),
       z.object({
         category: z.literal(ITEM_CATEGORIES.ELECTRONICS),
-        params: ElectronicsEstateItemParamsSchema.partial(),
+        params: ElectronicsEstateItemParamsSchema,
       }),
     ]),
   );
