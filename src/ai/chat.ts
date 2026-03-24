@@ -6,6 +6,7 @@ import {
 } from 'src/ai/ai-prompts.ts';
 import {
   OpenRouterClient,
+  OpenRouterTextCompletionStreamResult,
   OpenRouterUsage,
 } from 'src/ai/openrouter-client.ts';
 import { INPUT_LIMITS } from 'src/constants.ts';
@@ -55,6 +56,27 @@ export type AiChatResponse = {
   model?: string;
   usage?: OpenRouterUsage;
 };
+
+export type AiChatStreamEvent =
+  | {
+      event: 'meta';
+      data: {
+        model: string;
+      };
+    }
+  | {
+      event: 'chunk';
+      data: {
+        content: string;
+      };
+    }
+  | {
+      event: 'done';
+      data: {
+        model?: string;
+        usage?: OpenRouterUsage;
+      };
+    };
 
 const stripCodeFence = (value: string): string => {
   const trimmed = value.trim();
@@ -135,4 +157,66 @@ export const generateChatResponse = async (
     model: completion.model,
     ...(completion.usage ? { usage: completion.usage } : {}),
   };
+};
+
+export const streamChatResponse = async (
+  openRouterClient: OpenRouterClient,
+  {
+    item,
+    messages,
+    userMessage,
+    onEvent,
+  }: {
+    item: AiPromptItem;
+    messages: AiChatHistoryMessage[];
+    userMessage: string;
+    onEvent: (event: AiChatStreamEvent) => void | Promise<void>;
+  },
+): Promise<OpenRouterTextCompletionStreamResult> => {
+  let totalContentLength = 0;
+
+  const completion = await openRouterClient.streamTextCompletion(
+    {
+      endpoint: 'chat',
+      messages: buildChatPromptMessages({
+        item,
+        messages,
+        userMessage,
+      }),
+    },
+    {
+      onResponseStart: async ({ model }) => {
+        await onEvent({
+          event: 'meta',
+          data: {
+            model,
+          },
+        });
+      },
+      onTextDelta: async delta => {
+        totalContentLength += delta.length;
+
+        if (totalContentLength > INPUT_LIMITS.item.descriptionMaxLength) {
+          throw aiProviderError(AI_PROVIDER_ERROR_MESSAGE);
+        }
+
+        await onEvent({
+          event: 'chunk',
+          data: {
+            content: delta,
+          },
+        });
+      },
+    },
+  );
+
+  await onEvent({
+    event: 'done',
+    data: {
+      model: completion.model,
+      ...(completion.usage ? { usage: completion.usage } : {}),
+    },
+  });
+
+  return completion;
 };
