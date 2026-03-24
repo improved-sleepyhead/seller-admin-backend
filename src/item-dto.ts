@@ -10,6 +10,8 @@ const createReadItemDtoInput = (item: Item) => ({
   price: item.price,
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
+  previewImage: item.previewImage,
+  images: item.images,
   params: item.params,
   needsRevision: doesItemNeedRevision(item),
 });

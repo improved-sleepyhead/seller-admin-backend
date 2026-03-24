@@ -11,6 +11,7 @@ const ApiErrorCodeSchema = z.enum([
 ]);
 
 const IsoDateTimeSchema = z.string().datetime({ offset: true });
+const ImageUrlSchema = z.string().url();
 
 const optionalReadField = <T extends z.ZodType>(schema: T) =>
   schema.optional().catch(undefined);
@@ -51,6 +52,8 @@ const createReadItemSchema = <TCategory extends Item['category']>(
     price: z.number().finite().min(0),
     createdAt: IsoDateTimeSchema,
     updatedAt: IsoDateTimeSchema,
+    previewImage: optionalReadField(ImageUrlSchema),
+    images: optionalReadField(z.array(ImageUrlSchema).min(1)),
     params: paramsSchema,
     needsRevision: z.boolean().optional(),
   });
