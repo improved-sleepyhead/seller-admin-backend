@@ -404,7 +404,7 @@
         "Шаг 3: Проверить, что неразрешённый origin не проходит CORS-проверку."
       ],
       "dependencies": ["TASK-002", "TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-022",
