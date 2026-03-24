@@ -63,6 +63,17 @@ const parseItemId = (rawItemId: string): number => {
   return itemId;
 };
 
+const getAiStatusResponse = () => ({
+  enabled: config.ai.enabled,
+  provider: config.ai.provider,
+  model: config.ai.enabled ? config.ai.openrouter.model : null,
+  features: {
+    description: config.ai.enabled,
+    price: config.ai.enabled,
+    chat: config.ai.enabled,
+  },
+});
+
 export const buildApp = async () => {
   const fastify = Fastify({
     logger: true,
@@ -192,6 +203,8 @@ export const buildApp = async () => {
 
     return { success: true };
   });
+
+  fastify.get('/api/ai/status', () => getAiStatusResponse());
 
   return fastify;
 };
