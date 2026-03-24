@@ -1,19 +1,8 @@
 import type { Item } from './types.ts';
+import { ItemReadDtoSchema, type ItemReadDto } from './public-api.ts';
 import { doesItemNeedRevision } from './utils.ts';
 
-export type AdDetailsDto = {
-  id: number;
-  category: Item['category'];
-  title: string;
-  description?: string;
-  price: number | null;
-  createdAt: string;
-  updatedAt: string;
-  params: Item['params'];
-  needsRevision?: boolean;
-};
-
-export const toAdDetailsDto = (item: Item): AdDetailsDto => ({
+const createReadItemDtoInput = (item: Item) => ({
   id: item.id,
   category: item.category,
   title: item.title,
@@ -24,3 +13,10 @@ export const toAdDetailsDto = (item: Item): AdDetailsDto => ({
   params: item.params,
   needsRevision: doesItemNeedRevision(item),
 });
+
+export type AdDetailsDto = ItemReadDto;
+
+export const toItemReadDto = (item: Item): ItemReadDto =>
+  ItemReadDtoSchema.parse(createReadItemDtoInput(item));
+
+export const toAdDetailsDto = toItemReadDto;

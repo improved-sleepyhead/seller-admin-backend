@@ -115,3 +115,11 @@
 1. Compared `API_CONTRACT.md` against live responses from a running server on `PORT=9090` for `GET /items`, `GET /items/:id`, and `GET /api/ai/status`.
 2. Verified the document covers required query params including `sortColumn=price` and `sortDirection`, and that documented error codes match actual `VALIDATION_ERROR`, `NOT_FOUND`, `AI_UNAVAILABLE`, and `AI_PROVIDER_ERROR` behavior.
 3. Reused the documented examples in smoke checks: live HTTP checks for core and disabled AI flows, plus mocked OpenRouter checks for AI success JSON and SSE contracts.
+
+2026-03-25 - TASK-023 done
+- Added `src/public-api.ts` with backend-owned Zod schemas for item read DTOs, item success DTOs, AI success DTOs, SSE events, and the unified public error DTO.
+- Switched item read responses to explicit DTO mapping so frontend no longer receives raw dataset quirks: legacy invalid `params` values are dropped, and public responses are normalized before leaving the backend.
+- Test steps passed:
+1. Verified success responses for `GET /items`, `GET /items/:id`, `PUT /items/:id`, `GET /api/ai/status`, `POST /api/ai/description`, `POST /api/ai/price`, and `POST /api/ai/chat` through the shared Zod response schemas.
+2. Verified error responses for the same public contracts continue to use the stable `{ success: false, code, message, details? }` DTO, including `VALIDATION_ERROR`, `AI_UNAVAILABLE`, and `AI_PROVIDER_ERROR`.
+3. Re-ran `node --test --import tsx server.test.ts src/ai/*.test.ts` and confirmed the runtime-validation contract checks pass end-to-end, including normalization of legacy item params and backend-owned SSE chat events.

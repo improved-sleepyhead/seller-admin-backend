@@ -15,12 +15,20 @@ import { generateDescriptionSuggestion } from 'src/ai/description.ts';
 import { generatePriceSuggestion } from 'src/ai/price.ts';
 import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
-import { toAdDetailsDto } from 'src/item-dto.ts';
+import { toAdDetailsDto, toItemReadDto } from 'src/item-dto.ts';
 import {
   createLoggerOptions,
   getRequestEndpoint,
   logApiErrorResponse,
 } from 'src/logging.ts';
+import {
+  AiChatResponseSchema,
+  AiDescriptionResponseSchema,
+  AiPriceResponseSchema,
+  AiStatusResponseSchema,
+  ItemsResponseSchema,
+  ItemUpdateSuccessResponseSchema,
+} from 'src/public-api.ts';
 import {
   notFoundError,
   toApiErrorResponse,
@@ -247,7 +255,7 @@ export const buildApp = async (
       );
     });
 
-    return {
+    return ItemsResponseSchema.parse({
       items: filteredItems
         .toSorted((item1, item2) => {
           let comparisonValue = 0;
@@ -267,12 +275,9 @@ export const buildApp = async (
           return (sortDirection === 'desc' ? -1 : 1) * comparisonValue;
         })
         .slice(skip, skip + limit)
-        .map(item => ({
-          ...item,
-          needsRevision: doesItemNeedRevision(item),
-        })),
+        .map(toItemReadDto),
       total: filteredItems.length,
-    };
+    });
   });
 
   fastify.put<ItemUpdateRequest>('/items/:id', request => {
@@ -292,19 +297,23 @@ export const buildApp = async (
       ...parsedData,
     };
 
-    return { success: true };
+    return ItemUpdateSuccessResponseSchema.parse({ success: true });
   });
 
-  fastify.get('/api/ai/status', () => getAiStatusResponse(openRouterClient));
+  fastify.get('/api/ai/status', () =>
+    AiStatusResponseSchema.parse(getAiStatusResponse(openRouterClient)),
+  );
 
   fastify.post('/api/ai/description', async (request, reply) => {
     const { item } = AiDescriptionRequestSchema.parse(request.body ?? {});
 
     const abortHandle = createClientAbortHandle(request, reply);
     try {
-      return await generateDescriptionSuggestion(openRouterClient, item, {
-        signal: abortHandle.signal,
-      });
+      return AiDescriptionResponseSchema.parse(
+        await generateDescriptionSuggestion(openRouterClient, item, {
+          signal: abortHandle.signal,
+        }),
+      );
     } finally {
       abortHandle.cleanup();
     }
@@ -315,9 +324,11 @@ export const buildApp = async (
 
     const abortHandle = createClientAbortHandle(request, reply);
     try {
-      return await generatePriceSuggestion(openRouterClient, item, {
-        signal: abortHandle.signal,
-      });
+      return AiPriceResponseSchema.parse(
+        await generatePriceSuggestion(openRouterClient, item, {
+          signal: abortHandle.signal,
+        }),
+      );
     } finally {
       abortHandle.cleanup();
     }
@@ -332,12 +343,14 @@ export const buildApp = async (
       const abortHandle = createClientAbortHandle(request, reply);
 
       try {
-        return await generateChatResponse(openRouterClient, {
-          item,
-          messages,
-          userMessage,
-          signal: abortHandle.signal,
-        });
+        return AiChatResponseSchema.parse(
+          await generateChatResponse(openRouterClient, {
+            item,
+            messages,
+            userMessage,
+            signal: abortHandle.signal,
+          }),
+        );
       } finally {
         abortHandle.cleanup();
       }
