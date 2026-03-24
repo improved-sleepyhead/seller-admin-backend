@@ -368,7 +368,7 @@
         "Шаг 3: Повторить запуск несколько раз и убедиться в отсутствии race-condition поведения."
       ],
       "dependencies": ["TASK-013", "TASK-014"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-020",
