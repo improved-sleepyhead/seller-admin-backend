@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
 import { generateDescriptionSuggestion } from 'src/ai/description.ts';
+import { generatePriceSuggestion } from 'src/ai/price.ts';
 import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
@@ -228,10 +229,10 @@ export const buildApp = async () => {
     return generateDescriptionSuggestion(openRouterClient, item);
   });
 
-  fastify.post('/api/ai/price', request => {
-    failPendingAiRequest(() => {
-      AiPriceRequestSchema.parse(request.body ?? {});
-    });
+  fastify.post('/api/ai/price', async request => {
+    const { item } = AiPriceRequestSchema.parse(request.body ?? {});
+
+    return generatePriceSuggestion(openRouterClient, item);
   });
 
   fastify.post('/api/ai/chat', request => {

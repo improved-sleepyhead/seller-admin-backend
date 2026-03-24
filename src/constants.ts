@@ -10,6 +10,7 @@ export const INPUT_LIMITS = {
     descriptionMaxLength: 5000,
   },
   ai: {
+    priceReasoningMaxLength: 500,
     userMessageMaxLength: 2000,
     historyMessageMaxLength: 2000,
     historyMaxItems: 20,
