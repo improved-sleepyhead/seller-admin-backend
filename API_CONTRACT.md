@@ -82,34 +82,28 @@ GET /items?categories=auto,electronics&needsRevision=true&sortColumn=price&sortD
 {
   "items": [
     {
-      "id": 3,
+      "id": 13,
       "category": "electronics",
-      "title": "Новенький айфон 17 Про Макс",
+      "title": "Телевизор lg на запчасти",
       "description": "",
-      "price": 200000,
-      "createdAt": "2026-03-10T00:00:00.000Z",
-      "updatedAt": "2026-03-10T00:00:00.000Z",
-      "params": {
-        "type": "phone",
-        "brand": "Apple",
-        "model": "iPhone 17 Pro Max",
-        "condition": "new",
-        "color": "Чёрный"
-      },
+      "price": 1850,
+      "createdAt": "2026-02-11T00:00:00.000Z",
+      "updatedAt": "2026-02-11T00:00:00.000Z",
+      "params": {},
       "needsRevision": true
     },
     {
-      "id": 5,
+      "id": 11,
       "category": "electronics",
-      "title": "Наушники JBL Tour one m2",
+      "title": "Проигрыватель винила Radiotehnika эп-101",
       "description": "",
-      "price": 25000,
-      "createdAt": "2026-03-02T00:00:00.000Z",
-      "updatedAt": "2026-03-02T00:00:00.000Z",
+      "price": 4400,
+      "createdAt": "2026-03-05T00:00:00.000Z",
+      "updatedAt": "2026-03-05T00:00:00.000Z",
       "params": {
         "type": "misc",
-        "condition": "new",
-        "color": "Белый"
+        "condition": "used",
+        "color": "Серый"
       },
       "needsRevision": true
     }
