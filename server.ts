@@ -204,14 +204,18 @@ const isMainModule =
   import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMainModule) {
-  const fastify = await buildApp();
+  const main = async () => {
+    const fastify = await buildApp();
 
-  fastify.listen({ port }, function (err, _address) {
-    if (err) {
-      fastify.log.error(err);
-      process.exit(1);
-    }
+    fastify.listen({ port }, function (err, _address) {
+      if (err) {
+        fastify.log.error(err);
+        process.exit(1);
+      }
 
-    fastify.log.debug(`Server is listening on port ${port}`);
-  });
+      fastify.log.debug(`Server is listening on port ${port}`);
+    });
+  };
+
+  void main();
 }
