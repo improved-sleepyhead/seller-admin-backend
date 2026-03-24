@@ -107,3 +107,11 @@
 1. Sent a valid `/api/ai/description` request with an empty `description` and verified a `200` response with string `suggestion`.
 2. Verified the returned `suggestion` is suitable for direct textarea insertion and the response includes normalized `model` and `usage` metadata.
 3. Sent an invalid payload and verified `400 VALIDATION_ERROR`.
+
+2026-03-25 - TASK-022 done
+- Added `API_CONTRACT.md` as a frontend-facing contract reference synchronized with the current backend behavior for list, detail, update, AI status, description, price, chat, and SSE chat.
+- Documented supported query params, stable success/error DTOs, disabled AI state, and concrete request/response examples verified against live HTTP responses and mocked AI success flows.
+- Test steps passed:
+1. Compared `API_CONTRACT.md` against live responses from a running server on `PORT=9090` for `GET /items`, `GET /items/:id`, and `GET /api/ai/status`.
+2. Verified the document covers required query params including `sortColumn=price` and `sortDirection`, and that documented error codes match actual `VALIDATION_ERROR`, `NOT_FOUND`, `AI_UNAVAILABLE`, and `AI_PROVIDER_ERROR` behavior.
+3. Reused the documented examples in smoke checks: live HTTP checks for core and disabled AI flows, plus mocked OpenRouter checks for AI success JSON and SSE contracts.
