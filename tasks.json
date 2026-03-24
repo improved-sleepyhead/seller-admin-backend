@@ -290,7 +290,7 @@
         "Шаг 3: Убедиться, что после AI ошибки GET /items продолжает работать штатно."
       ],
       "dependencies": ["TASK-003", "TASK-010", "TASK-011"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-016",
