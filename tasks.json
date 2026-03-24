@@ -272,7 +272,7 @@
         "Шаг 3: Смоделировать невалидный provider response и проверить 502 с code=AI_PROVIDER_ERROR."
       ],
       "dependencies": ["TASK-009", "TASK-010", "TASK-012", "TASK-011"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-015",
