@@ -24,6 +24,11 @@
     "price": 23200000,
     "createdAt": "2026-02-14T00:00:00.000Z",
     "updatedAt": "2026-02-14T00:00:00.000Z",
+    "previewImage": "https://cdn.example.com/items/2/preview.jpg",
+    "images": [
+      "https://cdn.example.com/items/2/1.jpg",
+      "https://cdn.example.com/items/2/2.jpg"
+    ],
     "params": {
       "type": "flat",
       "address": "г. Москва, Кастанаевская улица, 42к1",

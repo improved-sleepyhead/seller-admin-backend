@@ -291,6 +291,47 @@ test('item endpoints return normalized DTOs that are safe for runtime validation
   assert.deepEqual(detailBody.params, legacyListItem.params);
 });
 
+test('GET /items and GET /items/:id expose optional image fields when present', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const listResponse = await app.inject({
+    method: 'GET',
+    url: '/items?limit=30&skip=0',
+  });
+
+  assert.equal(listResponse.statusCode, 200);
+
+  const listBody = ItemsResponseSchema.parse(listResponse.json());
+  const imageListItem = listBody.items.find(item => item.id === 2);
+  const legacyListItem = listBody.items.find(item => item.id === 1);
+
+  assert.ok(imageListItem);
+  assert.ok(legacyListItem);
+  assert.equal(imageListItem.previewImage, 'https://cdn.example.com/items/2/preview.jpg');
+  assert.deepEqual(imageListItem.images, [
+    'https://cdn.example.com/items/2/1.jpg',
+    'https://cdn.example.com/items/2/2.jpg',
+  ]);
+  assert.equal(legacyListItem.previewImage, undefined);
+  assert.equal(legacyListItem.images, undefined);
+
+  const detailResponse = await app.inject({
+    method: 'GET',
+    url: '/items/2',
+  });
+
+  assert.equal(detailResponse.statusCode, 200);
+
+  const detailBody = ItemReadDtoSchema.parse(detailResponse.json());
+
+  assert.equal(detailBody.previewImage, imageListItem.previewImage);
+  assert.deepEqual(detailBody.images, imageListItem.images);
+});
+
 test('PUT /items/:id returns the stable success DTO', async t => {
   const app = await buildApp();
 
