@@ -332,7 +332,7 @@
         "Шаг 3: Убедиться, что provider-specific поля не просачиваются в публичный SSE-контракт."
       ],
       "dependencies": ["TASK-016"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-018",
