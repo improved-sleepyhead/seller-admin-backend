@@ -91,3 +91,11 @@
 1. Started the app with `PORT=9090`, `OPENROUTER_API_KEY=test-openrouter-key`, and `OPENROUTER_MODEL=test-model`, then verified `GET /api/ai/status` returned `enabled=true` and `model=test-model`.
 2. Re-ran a local mock-provider script and verified upstream `500` maps to controlled `502 AI_PROVIDER_ERROR`, while a delayed response maps to controlled `504 AI_PROVIDER_ERROR`.
 3. Verified captured client logs contain only safe metadata and do not include the full API key.
+
+2026-03-24 - TASK-012 done
+- Added shared AI prompt builders with one stable base system prompt and separate endpoint instructions for `description`, `price`, and `chat`.
+- Centralized item-context prompt assembly so future AI routes can reuse the same backend-owned prompt construction without asking frontend for system instructions.
+- Test steps passed:
+1. Built prompts for `description`, `price`, and `chat` against the same item through `src/ai/ai-prompts.test.ts`.
+2. Verified all prompt variants include item context plus endpoint-specific task wording.
+3. Verified builders inject the shared system prompt themselves, so frontend does not need to send system instructions.

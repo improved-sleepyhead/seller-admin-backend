@@ -236,7 +236,7 @@
         "Шаг 3: Убедиться, что prompts не требуют от frontend передавать системные инструкции."
       ],
       "dependencies": ["TASK-010"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-013",
