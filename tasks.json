@@ -200,7 +200,7 @@
         "Шаг 3: Проверить логи и убедиться, что в них нет полного API key."
       ],
       "dependencies": ["TASK-001", "TASK-003"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-011",
