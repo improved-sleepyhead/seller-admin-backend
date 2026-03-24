@@ -4,6 +4,17 @@ import test from 'node:test';
 
 import items from 'data/items.json' with { type: 'json' };
 import { config, DEFAULT_DEV_CORS_ALLOWED_ORIGINS } from 'src/config.ts';
+import {
+  AiChatResponseSchema,
+  AiChatStreamEventSchema,
+  AiDescriptionResponseSchema,
+  AiPriceResponseSchema,
+  AiStatusResponseSchema,
+  ApiErrorResponseSchema,
+  ItemReadDtoSchema,
+  ItemsResponseSchema,
+  ItemUpdateSuccessResponseSchema,
+} from 'src/public-api.ts';
 import { buildApp } from './server.ts';
 
 const validAiPayload = {
@@ -244,6 +255,151 @@ test('CORS allowlist skips headers for a disallowed origin', async t => {
   assert.equal(response.headers['access-control-allow-headers'], undefined);
 });
 
+test('item endpoints return normalized DTOs that are safe for runtime validation', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const listResponse = await app.inject({
+    method: 'GET',
+    url: '/items?limit=30&skip=0',
+  });
+
+  assert.equal(listResponse.statusCode, 200);
+
+  const listBody = ItemsResponseSchema.parse(listResponse.json());
+  const legacyListItem = listBody.items.find(item => item.id === 8);
+
+  assert.ok(legacyListItem);
+  assert.deepEqual(legacyListItem.params, {
+    brand: 'Lada',
+    model: 'Niva',
+    transmission: 'automatic',
+  });
+
+  const detailResponse = await app.inject({
+    method: 'GET',
+    url: '/items/8',
+  });
+
+  assert.equal(detailResponse.statusCode, 200);
+
+  const detailBody = ItemReadDtoSchema.parse(detailResponse.json());
+
+  assert.deepEqual(detailBody.params, legacyListItem.params);
+});
+
+test('PUT /items/:id returns the stable success DTO', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'PUT',
+    url: '/items/1',
+    payload: {
+      category: 'auto',
+      title: 'Почти новая Mitsubishi Lancer',
+      description: '',
+      price: 300000,
+      params: {
+        brand: 'Mitsubishi',
+        model: 'Lancer',
+        yearOfManufacture: 2005,
+        transmission: 'automatic',
+        mileage: 200000,
+        enginePower: 98,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(
+    ItemUpdateSuccessResponseSchema.parse(response.json()),
+    { success: true },
+  );
+});
+
+test('GET /api/ai/status returns a runtime-validatable response in disabled and enabled states', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+
+  config.ai = {
+    ...originalAiConfig,
+    enabled: false,
+    provider: null,
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: null,
+    },
+  };
+
+  const disabledApp = await buildApp();
+
+  t.after(async () => {
+    config.ai = originalAiConfig;
+    await disabledApp.close();
+  });
+
+  const disabledResponse = await disabledApp.inject({
+    method: 'GET',
+    url: '/api/ai/status',
+  });
+
+  assert.equal(disabledResponse.statusCode, 200);
+  assert.deepEqual(
+    AiStatusResponseSchema.parse(disabledResponse.json()),
+    {
+      enabled: false,
+      provider: null,
+      model: null,
+      features: {
+        description: false,
+        price: false,
+        chat: false,
+      },
+    },
+  );
+
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+      model: 'openrouter/test-model',
+    },
+  };
+
+  const enabledApp = await buildApp();
+
+  t.after(async () => {
+    await enabledApp.close();
+  });
+
+  const enabledResponse = await enabledApp.inject({
+    method: 'GET',
+    url: '/api/ai/status',
+  });
+
+  assert.equal(enabledResponse.statusCode, 200);
+
+  const enabledBody = AiStatusResponseSchema.parse(enabledResponse.json());
+
+  assert.equal(enabledBody.enabled, true);
+  assert.equal(enabledBody.provider, 'openrouter');
+  assert.equal(enabledBody.model, 'openrouter/test-model');
+  assert.deepEqual(enabledBody.features, {
+    description: true,
+    price: true,
+    chat: true,
+  });
+});
+
 test('AI logs contain safe metadata without secrets or user content', async t => {
   const originalAiConfig = structuredClone(config.ai);
   config.ai = {
@@ -401,7 +557,7 @@ test('AI endpoints return AI_UNAVAILABLE when AI config is disabled', async t =>
   });
 
   assert.equal(response.statusCode, 503);
-  assert.equal(response.json().code, 'AI_UNAVAILABLE');
+  assert.equal(ApiErrorResponseSchema.parse(response.json()).code, 'AI_UNAVAILABLE');
 });
 
 test('POST /api/ai/description returns normalized suggestion for empty description', async t => {
@@ -477,7 +633,7 @@ test('POST /api/ai/description returns normalized suggestion for empty descripti
 
   assert.equal(response.statusCode, 200);
 
-  const body = response.json();
+  const body = AiDescriptionResponseSchema.parse(response.json());
 
   assert.equal(
     body.suggestion,
@@ -544,7 +700,10 @@ test('AI endpoints return AI_PROVIDER_ERROR when provider response cannot be nor
   });
 
   assert.equal(response.statusCode, 502);
-  assert.equal(response.json().code, 'AI_PROVIDER_ERROR');
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'AI_PROVIDER_ERROR',
+  );
 });
 
 test('POST /api/ai/description returns VALIDATION_ERROR for invalid payload', async t => {
@@ -561,7 +720,10 @@ test('POST /api/ai/description returns VALIDATION_ERROR for invalid payload', as
   });
 
   assert.equal(response.statusCode, 400);
-  assert.equal(response.json().code, 'VALIDATION_ERROR');
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
 });
 
 test('POST /api/ai/price returns normalized suggested price and reasoning', async t => {
@@ -625,7 +787,7 @@ test('POST /api/ai/price returns normalized suggested price and reasoning', asyn
 
   assert.equal(response.statusCode, 200);
 
-  const body = response.json();
+  const body = AiPriceResponseSchema.parse(response.json());
 
   assert.equal(body.suggestedPrice, 495000);
   assert.equal(typeof body.suggestedPrice, 'number');
@@ -695,7 +857,10 @@ test('POST /api/ai/price returns AI_PROVIDER_ERROR for invalid provider response
   });
 
   assert.equal(response.statusCode, 502);
-  assert.equal(response.json().code, 'AI_PROVIDER_ERROR');
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'AI_PROVIDER_ERROR',
+  );
 });
 
 test('POST /api/ai/chat returns normalized assistant message', async t => {
@@ -761,7 +926,7 @@ test('POST /api/ai/chat returns normalized assistant message', async t => {
 
   assert.equal(response.statusCode, 200);
 
-  const body = response.json();
+  const body = AiChatResponseSchema.parse(response.json());
 
   assert.deepEqual(body.message, {
     role: 'assistant',
@@ -804,7 +969,10 @@ test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', asyn
   });
 
   assert.equal(response.statusCode, 400);
-  assert.equal(response.json().code, 'VALIDATION_ERROR');
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
 });
 
 test('POST /api/ai/chat streams backend-owned SSE events without provider-specific fields', async t => {
@@ -870,7 +1038,9 @@ test('POST /api/ai/chat streams backend-owned SSE events without provider-specif
   });
 
   const rawBody = await readResponseStream(response);
-  const events = parseSseEvents(rawBody);
+  const events = parseSseEvents(rawBody).map(event =>
+    AiChatStreamEventSchema.parse(event),
+  );
 
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/i);
@@ -963,7 +1133,9 @@ test('POST /api/ai/chat emits SSE error event when provider stream becomes inval
   });
 
   const rawBody = await readResponseStream(response);
-  const events = parseSseEvents(rawBody);
+  const events = parseSseEvents(rawBody).map(event =>
+    AiChatStreamEventSchema.parse(event),
+  );
 
   assert.equal(response.status, 200);
   assert.deepEqual(
@@ -1129,7 +1301,7 @@ test('POST /api/ai/description returns formatted 504 when the provider times out
 
   assert.equal(timedOutUpstream, true);
   assert.equal(response.statusCode, 504);
-  assert.deepEqual(response.json(), {
+  assert.deepEqual(ApiErrorResponseSchema.parse(response.json()), {
     success: false,
     code: 'AI_PROVIDER_ERROR',
     message: 'Failed to receive a valid response from AI provider.',
@@ -1183,7 +1355,10 @@ test('GET /items keeps working after an AI endpoint failure', async t => {
   });
 
   assert.equal(aiResponse.statusCode, 502);
-  assert.equal(aiResponse.json().code, 'AI_PROVIDER_ERROR');
+  assert.equal(
+    ApiErrorResponseSchema.parse(aiResponse.json()).code,
+    'AI_PROVIDER_ERROR',
+  );
 
   const itemsResponse = await app.inject({
     method: 'GET',
@@ -1192,7 +1367,7 @@ test('GET /items keeps working after an AI endpoint failure', async t => {
 
   assert.equal(itemsResponse.statusCode, 200);
 
-  const body = itemsResponse.json();
+  const body = ItemsResponseSchema.parse(itemsResponse.json());
 
   assert.ok(Array.isArray(body.items));
   assert.equal(typeof body.total, 'number');
