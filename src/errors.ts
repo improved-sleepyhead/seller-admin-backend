@@ -38,6 +38,12 @@ export const aiUnavailableError = (
   details?: unknown,
 ): AppError => new AppError(503, 'AI_UNAVAILABLE', message, details);
 
+export const aiProviderError = (
+  message: string,
+  details?: unknown,
+  statusCode = 502,
+): AppError => new AppError(statusCode, 'AI_PROVIDER_ERROR', message, details);
+
 export const toApiErrorResponse = (
   error: unknown,
 ): { statusCode: number; body: ApiErrorResponse } => {

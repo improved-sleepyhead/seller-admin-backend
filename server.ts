@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
+import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
 import {
@@ -71,14 +72,16 @@ const parseItemId = (rawItemId: string): number => {
   return itemId;
 };
 
-const getAiStatusResponse = () => ({
-  enabled: config.ai.enabled,
-  provider: config.ai.provider,
-  model: config.ai.enabled ? config.ai.openrouter.model : null,
+const getAiStatusResponse = (
+  openRouterClient: ReturnType<typeof createOpenRouterClient>,
+) => ({
+  enabled: openRouterClient.enabled,
+  provider: openRouterClient.enabled ? openRouterClient.provider : null,
+  model: openRouterClient.enabled ? openRouterClient.model : null,
   features: {
-    description: config.ai.enabled,
-    price: config.ai.enabled,
-    chat: config.ai.enabled,
+    description: openRouterClient.enabled,
+    price: openRouterClient.enabled,
+    chat: openRouterClient.enabled,
   },
 });
 
@@ -105,6 +108,8 @@ export const buildApp = async () => {
   fastify.use((_, __, next) =>
     new Promise(res => setTimeout(res, 300 + Math.random() * 700)).then(next),
   );
+
+  const openRouterClient = createOpenRouterClient(config.ai, fastify.log);
 
   // Настройка CORS и preflight
   fastify.use((request, reply, next) => {
@@ -208,10 +213,11 @@ export const buildApp = async () => {
     return { success: true };
   });
 
-  fastify.get('/api/ai/status', () => getAiStatusResponse());
+  fastify.get('/api/ai/status', () => getAiStatusResponse(openRouterClient));
 
   const assertAiUnavailable = () => {
-    throw aiUnavailableError('AI features are currently unavailable.');
+    openRouterClient.assertAvailable();
+    throw aiUnavailableError('AI features are not implemented yet.');
   };
 
   fastify.post('/api/ai/description', request => {
