@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
+import { generateDescriptionSuggestion } from 'src/ai/description.ts';
 import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
@@ -221,10 +222,10 @@ export const buildApp = async () => {
     throw aiProviderError('Failed to receive a valid response from AI provider.');
   };
 
-  fastify.post('/api/ai/description', request => {
-    failPendingAiRequest(() => {
-      AiDescriptionRequestSchema.parse(request.body ?? {});
-    });
+  fastify.post('/api/ai/description', async request => {
+    const { item } = AiDescriptionRequestSchema.parse(request.body ?? {});
+
+    return generateDescriptionSuggestion(openRouterClient, item);
   });
 
   fastify.post('/api/ai/price', request => {
