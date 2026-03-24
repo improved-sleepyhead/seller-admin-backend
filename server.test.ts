@@ -32,6 +32,80 @@ const createMockResponse = (body: unknown, init?: ResponseInit): Response =>
     ...init,
   });
 
+const createMockSseResponse = (
+  chunks: string[],
+  init?: ResponseInit,
+): Response =>
+  new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+
+        controller.close();
+      },
+    }),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+      },
+      ...init,
+    },
+  );
+
+const readResponseStream = async (response: Response): Promise<string> => {
+  const reader = response.body?.getReader();
+
+  assert.ok(reader);
+
+  const decoder = new TextDecoder();
+  let body = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    body += decoder.decode(value, { stream: true });
+  }
+
+  body += decoder.decode();
+
+  return body;
+};
+
+const parseSseEvents = (
+  rawBody: string,
+): Array<{ event: string; data: Record<string, unknown> }> =>
+  rawBody
+    .split('\n\n')
+    .map(frame => frame.trim())
+    .filter(Boolean)
+    .map(frame => {
+      let event = 'message';
+      let data = '';
+
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) {
+          event = line.slice('event:'.length).trim();
+          continue;
+        }
+
+        if (line.startsWith('data:')) {
+          data += `${data ? '\n' : ''}${line.slice('data:'.length).trimStart()}`;
+        }
+      }
+
+      return {
+        event,
+        data: JSON.parse(data) as Record<string, unknown>,
+      };
+    });
+
 test('AI endpoints return AI_UNAVAILABLE when AI config is disabled', async t => {
   const originalAiConfig = structuredClone(config.ai);
   config.ai = {
@@ -465,6 +539,176 @@ test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', asyn
 
   assert.equal(response.statusCode, 400);
   assert.equal(response.json().code, 'VALIDATION_ERROR');
+});
+
+test('POST /api/ai/chat streams backend-owned SSE events without provider-specific fields', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  let capturedRequestBody: Record<string, unknown> | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const requestUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+    if (requestUrl.includes('/chat/completions')) {
+      capturedRequestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+      return createMockSseResponse([
+        ': keep-alive\n\n',
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"role":"assistant"}}]}\n\n',
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"Состояние выглядит "}}]}\n\n',
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"аккуратным и ухоженным."}}]}\n\n',
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","usage":{"prompt_tokens":55,"completion_tokens":18,"total_tokens":73},"choices":[]}\n\n',
+        'data: [DONE]\n\n',
+      ]);
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  const response = await fetch(`${address}/api/ai/chat`, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(validAiChatPayload),
+  });
+
+  const rawBody = await readResponseStream(response);
+  const events = parseSseEvents(rawBody);
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/i);
+  assert.deepEqual(
+    events.map(event => event.event),
+    ['meta', 'chunk', 'chunk', 'done'],
+  );
+  assert.deepEqual(events[0].data, {
+    model: 'openrouter/test-model',
+  });
+  assert.equal(
+    events
+      .filter(event => event.event === 'chunk')
+      .map(event => event.data.content)
+      .join(''),
+    'Состояние выглядит аккуратным и ухоженным.',
+  );
+  assert.deepEqual(events.at(-1)?.data, {
+    model: 'openrouter/test-model',
+    usage: {
+      inputTokens: 55,
+      outputTokens: 18,
+      totalTokens: 73,
+    },
+  });
+
+  for (const event of events) {
+    assert.equal('choices' in event.data, false);
+    assert.equal('delta' in event.data, false);
+    assert.equal('finish_reason' in event.data, false);
+    assert.equal('id' in event.data, false);
+  }
+
+  assert.equal(capturedRequestBody?.stream, true);
+});
+
+test('POST /api/ai/chat emits SSE error event when provider stream becomes invalid', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const requestUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+    if (requestUrl.includes('/chat/completions')) {
+      return createMockSseResponse([
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"Часть ответа"}}]}\n\n',
+        'data: {invalid-json}\n\n',
+      ]);
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  const response = await fetch(`${address}/api/ai/chat`, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(validAiChatPayload),
+  });
+
+  const rawBody = await readResponseStream(response);
+  const events = parseSseEvents(rawBody);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    events.map(event => event.event),
+    ['meta', 'chunk', 'error'],
+  );
+  assert.deepEqual(events.at(-1)?.data, {
+    success: false,
+    code: 'AI_PROVIDER_ERROR',
+    message: 'Failed to receive a valid response from AI provider.',
+  });
 });
 
 test('GET /items keeps working after an AI endpoint failure', async t => {

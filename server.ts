@@ -1,8 +1,12 @@
-import Fastify from 'fastify';
+import Fastify, { FastifyReply } from 'fastify';
 import { pathToFileURL } from 'node:url';
 
 import items from 'data/items.json' with { type: 'json' };
-import { generateChatResponse } from 'src/ai/chat.ts';
+import {
+  AiChatStreamEvent,
+  generateChatResponse,
+  streamChatResponse,
+} from 'src/ai/chat.ts';
 import { generateDescriptionSuggestion } from 'src/ai/description.ts';
 import { generatePriceSuggestion } from 'src/ai/price.ts';
 import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
@@ -27,6 +31,7 @@ const ITEMS = items as Item[];
 
 const CORS_ALLOWED_METHODS = 'GET,PUT,POST,OPTIONS';
 const CORS_ALLOWED_HEADERS = 'Content-Type';
+const SSE_CONTENT_TYPE = 'text/event-stream; charset=utf-8';
 
 const resolveAllowedOrigin = (requestOrigin: string | undefined): string | null => {
   const allowedOrigins = config.cors.allowedOrigins;
@@ -86,6 +91,25 @@ const getAiStatusResponse = (
     chat: openRouterClient.enabled,
   },
 });
+
+const requestAcceptsEventStream = (acceptHeader: string | undefined): boolean =>
+  typeof acceptHeader === 'string' &&
+  acceptHeader
+    .split(',')
+    .some(value => value.trim().toLowerCase().includes('text/event-stream'));
+
+const writeSseEvent = (
+  reply: FastifyReply,
+  event: AiChatStreamEvent['event'] | 'error',
+  data: Record<string, unknown>,
+) => {
+  if (reply.raw.destroyed) {
+    return;
+  }
+
+  reply.raw.write(`event: ${event}\n`);
+  reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+};
 
 export const buildApp = async () => {
   const fastify = Fastify({
@@ -229,16 +253,49 @@ export const buildApp = async () => {
     return generatePriceSuggestion(openRouterClient, item);
   });
 
-  fastify.post('/api/ai/chat', async request => {
+  fastify.post('/api/ai/chat', async (request, reply) => {
     const { item, messages, userMessage } = AiChatRequestSchema.parse(
       request.body ?? {},
     );
 
-    return generateChatResponse(openRouterClient, {
-      item,
-      messages,
-      userMessage,
-    });
+    if (!requestAcceptsEventStream(request.headers.accept)) {
+      return generateChatResponse(openRouterClient, {
+        item,
+        messages,
+        userMessage,
+      });
+    }
+
+    openRouterClient.assertAvailable();
+
+    reply.hijack();
+    reply.raw.statusCode = 200;
+    reply.raw.setHeader('Content-Type', SSE_CONTENT_TYPE);
+    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('X-Accel-Buffering', 'no');
+    reply.raw.flushHeaders?.();
+
+    try {
+      await streamChatResponse(openRouterClient, {
+        item,
+        messages,
+        userMessage,
+        onEvent: event => writeSseEvent(reply, event.event, event.data),
+      });
+    } catch (error) {
+      const { statusCode, body } = toApiErrorResponse(error);
+
+      if (statusCode >= 500) {
+        request.log.error({ err: error, code: body.code }, body.message);
+      } else {
+        request.log.info({ code: body.code }, body.message);
+      }
+
+      writeSseEvent(reply, 'error', body);
+    } finally {
+      reply.raw.end();
+    }
   });
 
   return fastify;

@@ -142,6 +142,24 @@ export type OpenRouterTextCompletionResult = {
   usage?: OpenRouterUsage;
 };
 
+export type OpenRouterTextStreamStart = {
+  id: string;
+  model: string;
+};
+
+export type OpenRouterTextStreamHandlers = {
+  onResponseStart?: (
+    metadata: OpenRouterTextStreamStart,
+  ) => void | Promise<void>;
+  onTextDelta: (delta: string) => void | Promise<void>;
+};
+
+export type OpenRouterTextCompletionStreamResult = {
+  id: string;
+  model: string;
+  usage?: OpenRouterUsage;
+};
+
 export type OpenRouterClient = {
   readonly enabled: boolean;
   readonly provider: 'openrouter';
@@ -151,6 +169,10 @@ export type OpenRouterClient = {
   createTextCompletion: (
     request: OpenRouterTextCompletionRequest,
   ) => Promise<OpenRouterTextCompletionResult>;
+  streamTextCompletion: (
+    request: OpenRouterTextCompletionRequest,
+    handlers: OpenRouterTextStreamHandlers,
+  ) => Promise<OpenRouterTextCompletionStreamResult>;
 };
 
 type OpenRouterResponseErrorPayload = {
@@ -297,6 +319,45 @@ const normalizeUsage = (usage: unknown): OpenRouterUsage | undefined => {
     : undefined;
 };
 
+const buildRequestBody = (
+  request: OpenRouterTextCompletionRequest,
+  defaultModel: string,
+  stream: boolean,
+) => {
+  const requestedModel =
+    typeof request.model === 'string' && request.model.trim().length
+      ? request.model
+      : undefined;
+
+  return {
+    body: {
+      ...(requestedModel || !request.models?.length
+        ? { model: requestedModel ?? defaultModel }
+        : {}),
+      ...(request.models?.length ? { models: request.models } : {}),
+      ...(request.route ? { route: request.route } : {}),
+      ...(request.user ? { user: request.user } : {}),
+      ...(request.provider ? { provider: request.provider } : {}),
+      ...(request.plugins?.length ? { plugins: request.plugins } : {}),
+      ...(request.responseFormat
+        ? { response_format: request.responseFormat }
+        : {}),
+      ...(request.tools?.length ? { tools: request.tools } : {}),
+      ...(request.toolChoice ? { tool_choice: request.toolChoice } : {}),
+      ...(typeof request.maxTokens === 'number'
+        ? { max_tokens: request.maxTokens }
+        : {}),
+      ...(typeof request.temperature === 'number'
+        ? { temperature: request.temperature }
+        : {}),
+      ...(request.stop ? { stop: request.stop } : {}),
+      messages: request.messages,
+      stream,
+    },
+    requestedModel,
+  };
+};
+
 const extractContentPartText = (part: unknown): string => {
   if (typeof part === 'string') {
     return part;
@@ -316,6 +377,18 @@ const extractTextContent = (content: unknown): string => {
 
   if (Array.isArray(content)) {
     return content.map(extractContentPartText).join('').trim();
+  }
+
+  return '';
+};
+
+const extractStreamTextContent = (content: unknown): string => {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content.map(extractContentPartText).join('');
   }
 
   return '';
@@ -386,6 +459,36 @@ const extractChoiceText = (payload: OpenRouterResponsePayload): string => {
   throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
 };
 
+const extractStreamChoiceText = (payload: OpenRouterResponsePayload): string => {
+  if (!Array.isArray(payload.choices)) {
+    throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+  }
+
+  if (payload.choices.length === 0) {
+    return '';
+  }
+
+  const firstChoice = payload.choices[0];
+
+  if (!isRecord(firstChoice)) {
+    throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+  }
+
+  const choice = firstChoice as OpenRouterResponseChoicePayload & {
+    delta?: unknown;
+  };
+
+  if (hasChoiceError(choice) || choice.finish_reason === 'error') {
+    throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+  }
+
+  if (choice.finish_reason === 'tool_calls' || hasToolCalls(choice.delta)) {
+    throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+  }
+
+  return isRecord(choice.delta) ? extractStreamTextContent(choice.delta.content) : '';
+};
+
 const parseOpenRouterPayload = async (
   response: Response,
   allowInvalidBody = false,
@@ -403,6 +506,30 @@ const parseOpenRouterPayload = async (
       return undefined;
     }
 
+    throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+  }
+};
+
+const extractSseDataPayload = (chunk: string): string | undefined => {
+  const dataLines = chunk
+    .split('\n')
+    .map(line => line.trimEnd())
+    .filter(line => line.length > 0 && !line.startsWith(':'))
+    .flatMap(line => (line.startsWith('data:') ? [line.slice(5).trimStart()] : []));
+
+  return dataLines.length ? dataLines.join('\n') : undefined;
+};
+
+const parseStreamingPayload = (data: string): OpenRouterResponsePayload => {
+  try {
+    const payload = JSON.parse(data) as unknown;
+
+    if (!isRecord(payload)) {
+      throw new Error('Provider response should be an object.');
+    }
+
+    return payload;
+  } catch {
     throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
   }
 };
@@ -440,33 +567,11 @@ export const createOpenRouterClient = (
 
       const startedAt = Date.now();
       const { signal, cleanup } = buildRequestSignal(aiConfig.timeoutMs, request.signal);
-      const requestedModel =
-        typeof request.model === 'string' && request.model.trim().length
-          ? request.model
-          : undefined;
-
-      const requestBody = {
-        ...(requestedModel || !request.models?.length ? { model: requestedModel ?? model } : {}),
-        ...(request.models?.length ? { models: request.models } : {}),
-        ...(request.route ? { route: request.route } : {}),
-        ...(request.user ? { user: request.user } : {}),
-        ...(request.provider ? { provider: request.provider } : {}),
-        ...(request.plugins?.length ? { plugins: request.plugins } : {}),
-        ...(request.responseFormat
-          ? { response_format: request.responseFormat }
-          : {}),
-        ...(request.tools?.length ? { tools: request.tools } : {}),
-        ...(request.toolChoice ? { tool_choice: request.toolChoice } : {}),
-        ...(typeof request.maxTokens === 'number'
-          ? { max_tokens: request.maxTokens }
-          : {}),
-        ...(typeof request.temperature === 'number'
-          ? { temperature: request.temperature }
-          : {}),
-        ...(request.stop ? { stop: request.stop } : {}),
-        messages: request.messages,
-        stream: false,
-      };
+      const { body: requestBody, requestedModel } = buildRequestBody(
+        request,
+        model,
+        false,
+      );
 
       try {
         const response = await fetch(`${baseUrl}${OPENROUTER_CHAT_COMPLETIONS_PATH}`, {
@@ -530,6 +635,218 @@ export const createOpenRouterClient = (
           id: getGenerationId(payload),
           model: responseModel,
           text,
+          ...(usage ? { usage } : {}),
+        };
+      } catch (error) {
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          logRequestResult(
+            logger,
+            'warn',
+            {
+              endpoint: request.endpoint,
+              model: requestedModel ?? model,
+              durationMs: Date.now() - startedAt,
+              provider: 'openrouter',
+              status: 504,
+            },
+            'OpenRouter request timed out.',
+          );
+
+          throw aiProviderError(OPENROUTER_ERROR_MESSAGE, undefined, 504);
+        }
+
+        if (error instanceof Error && error.name === 'AbortError') {
+          logRequestResult(
+            logger,
+            'warn',
+            {
+              endpoint: request.endpoint,
+              model: requestedModel ?? model,
+              durationMs: Date.now() - startedAt,
+              provider: 'openrouter',
+              status: 502,
+            },
+            'OpenRouter request was aborted.',
+          );
+
+          throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+        }
+
+        if (error instanceof Error && 'code' in error) {
+          throw error;
+        }
+
+        logRequestResult(
+          logger,
+          'error',
+          {
+            endpoint: request.endpoint,
+            model: requestedModel ?? model,
+            durationMs: Date.now() - startedAt,
+            provider: 'openrouter',
+            status: 502,
+          },
+          'OpenRouter request failed before a valid response was received.',
+        );
+
+        throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+      } finally {
+        cleanup();
+      }
+    },
+    async streamTextCompletion(request, handlers) {
+      assertAvailable();
+
+      const startedAt = Date.now();
+      const { signal, cleanup } = buildRequestSignal(aiConfig.timeoutMs, request.signal);
+      const { body: requestBody, requestedModel } = buildRequestBody(
+        request,
+        model,
+        true,
+      );
+
+      let generationId: string | undefined;
+      let responseModel: string | undefined;
+      let usage: OpenRouterUsage | undefined;
+      let responseStarted = false;
+      let receivedDone = false;
+
+      const emitResponseStart = async () => {
+        if (!generationId || responseStarted) {
+          return;
+        }
+
+        responseStarted = true;
+        await handlers.onResponseStart?.({
+          id: generationId,
+          model: responseModel ?? requestedModel ?? model,
+        });
+      };
+
+      try {
+        const response = await fetch(`${baseUrl}${OPENROUTER_CHAT_COMPLETIONS_PATH}`, {
+          method: 'POST',
+          headers: {
+            ...(request.headers ?? {}),
+            Authorization: `Bearer ${aiConfig.openrouter.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal,
+        });
+
+        const logMetadata = {
+          endpoint: request.endpoint,
+          model: requestedModel ?? model,
+          durationMs: Date.now() - startedAt,
+          provider: 'openrouter',
+          status: response.status,
+        };
+
+        if (!response.ok) {
+          await parseOpenRouterPayload(response, true);
+
+          logRequestResult(
+            logger,
+            'warn',
+            logMetadata,
+            'OpenRouter request returned an upstream error.',
+          );
+
+          throw aiProviderError(
+            OPENROUTER_ERROR_MESSAGE,
+            undefined,
+            response.status === 408 ? 504 : 502,
+          );
+        }
+
+        if (!response.body) {
+          throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const processFrame = async (frame: string) => {
+          const data = extractSseDataPayload(frame);
+
+          if (!data) {
+            return;
+          }
+
+          if (data === '[DONE]') {
+            receivedDone = true;
+            return;
+          }
+
+          const chunkPayload = parseStreamingPayload(data);
+          generationId ??= toOptionalString(chunkPayload.id);
+          responseModel ??= toOptionalString(chunkPayload.model);
+          usage = normalizeUsage(chunkPayload.usage) ?? usage;
+          await emitResponseStart();
+
+          const delta = extractStreamChoiceText(chunkPayload);
+
+          if (delta.length) {
+            await handlers.onTextDelta(delta);
+          }
+        };
+
+        while (!receivedDone) {
+          const { done, value } = await reader.read();
+
+          buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+          buffer = buffer.replace(/\r\n/g, '\n');
+
+          let separatorIndex = buffer.indexOf('\n\n');
+
+          while (separatorIndex !== -1) {
+            const frame = buffer.slice(0, separatorIndex);
+            buffer = buffer.slice(separatorIndex + 2);
+
+            await processFrame(frame);
+
+            if (receivedDone) {
+              break;
+            }
+
+            separatorIndex = buffer.indexOf('\n\n');
+          }
+
+          if (done) {
+            break;
+          }
+        }
+
+        if (!receivedDone && buffer.trim().length) {
+          await processFrame(buffer);
+        }
+
+        if (!receivedDone || !generationId) {
+          throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
+        }
+
+        const finalModel = responseModel ?? requestedModel ?? model;
+
+        logRequestResult(
+          logger,
+          'info',
+          {
+            endpoint: request.endpoint,
+            model: finalModel,
+            durationMs: Date.now() - startedAt,
+            provider: 'openrouter',
+            status: response.status,
+            generationId,
+            ...(usage ? { usage } : {}),
+          },
+          'OpenRouter streaming request completed.',
+        );
+
+        return {
+          id: generationId,
+          model: finalModel,
           ...(usage ? { usage } : {}),
         };
       } catch (error) {
