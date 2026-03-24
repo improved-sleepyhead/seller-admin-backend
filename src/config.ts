@@ -1,9 +1,12 @@
-const DEFAULT_PORT = 8080;
-const DEFAULT_AI_ENABLED = true;
-const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
-const DEFAULT_AI_TIMEOUT_MS = 15000;
-const DEFAULT_CORS_ALLOWED_ORIGINS = ['*'];
+const env = {
+  PORT: process.env.PORT,
+  AI_ENABLED: process.env.AI_ENABLED,
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+  OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL,
+  OPENROUTER_MODEL: process.env.OPENROUTER_MODEL,
+  AI_TIMEOUT_MS: process.env.AI_TIMEOUT_MS,
+  CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+};
 
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
   if (!value) return fallback;
@@ -54,28 +57,24 @@ export type AppConfig = {
   };
 };
 
-const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || null;
-const aiFeatureEnabled = parseBoolean(process.env.AI_ENABLED, DEFAULT_AI_ENABLED);
+const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || null;
+const aiFeatureEnabled = parseBoolean(env.AI_ENABLED, true);
 
 const aiEnabled = aiFeatureEnabled && Boolean(openrouterApiKey);
 
 export const config: AppConfig = {
-  port: parsePositiveInt(process.env.PORT, DEFAULT_PORT),
+  port: parsePositiveInt(env.PORT, 8080),
   cors: {
-    allowedOrigins: parseCsvList(
-      process.env.CORS_ALLOWED_ORIGINS,
-      DEFAULT_CORS_ALLOWED_ORIGINS,
-    ),
+    allowedOrigins: parseCsvList(env.CORS_ALLOWED_ORIGINS, ['*']),
   },
   ai: {
     enabled: aiEnabled,
     provider: aiEnabled ? 'openrouter' : null,
-    timeoutMs: parsePositiveInt(process.env.AI_TIMEOUT_MS, DEFAULT_AI_TIMEOUT_MS),
+    timeoutMs: parsePositiveInt(env.AI_TIMEOUT_MS, 45000),
     openrouter: {
       apiKey: openrouterApiKey,
-      model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
-      baseUrl:
-        process.env.OPENROUTER_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL,
+      model: env.OPENROUTER_MODEL?.trim() || 'qwen/qwen3-next-80b-a3b-instruct',
+      baseUrl: env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1',
     },
   },
 };
