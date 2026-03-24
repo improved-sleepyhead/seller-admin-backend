@@ -6,7 +6,7 @@ import { createOpenRouterClient } from 'src/ai/openrouter-client.ts';
 import { config } from 'src/config.ts';
 import { toAdDetailsDto } from 'src/item-dto.ts';
 import {
-  aiUnavailableError,
+  aiProviderError,
   notFoundError,
   toApiErrorResponse,
   validationError,
@@ -215,24 +215,28 @@ export const buildApp = async () => {
 
   fastify.get('/api/ai/status', () => getAiStatusResponse(openRouterClient));
 
-  const assertAiUnavailable = () => {
+  const failPendingAiRequest = (parseBody: () => void) => {
+    parseBody();
     openRouterClient.assertAvailable();
-    throw aiUnavailableError('AI features are not implemented yet.');
+    throw aiProviderError('Failed to receive a valid response from AI provider.');
   };
 
   fastify.post('/api/ai/description', request => {
-    AiDescriptionRequestSchema.parse(request.body ?? {});
-    assertAiUnavailable();
+    failPendingAiRequest(() => {
+      AiDescriptionRequestSchema.parse(request.body ?? {});
+    });
   });
 
   fastify.post('/api/ai/price', request => {
-    AiPriceRequestSchema.parse(request.body ?? {});
-    assertAiUnavailable();
+    failPendingAiRequest(() => {
+      AiPriceRequestSchema.parse(request.body ?? {});
+    });
   });
 
   fastify.post('/api/ai/chat', request => {
-    AiChatRequestSchema.parse(request.body ?? {});
-    assertAiUnavailable();
+    failPendingAiRequest(() => {
+      AiChatRequestSchema.parse(request.body ?? {});
+    });
   });
 
   return fastify;
