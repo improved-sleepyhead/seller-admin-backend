@@ -4,7 +4,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "tsx server.ts",
+    "start": "node --env-file=.env --import tsx server.ts",
     "test:smoke": "node --test --import tsx tests/server.smoke.test.ts"
   },
   "keywords": [],

@@ -44,5 +44,7 @@ openrouter-quickstart.txt
 openrouter-routing.txt
 
 progress.md
+swagger-ui.md
 tasks.json
 swagger.md
+.playwright-cli/
