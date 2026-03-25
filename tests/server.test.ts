@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
+import Fastify from 'fastify';
 import items from 'data/items.json' with { type: 'json' };
 import {
   DEFAULT_DEV_CORS_ALLOWED_ORIGINS,
   config,
 } from 'src/shared/config/app-config.ts';
+import { registerDevDelayPlugin } from 'src/app/plugins/dev-delay.plugin.ts';
 import { AiChatResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiDescriptionResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiPriceResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
@@ -268,6 +270,53 @@ test('Swagger UI serves the documentation page', async t => {
   assert.equal(response.headers['content-type']?.includes('text/html'), true);
   assert.equal(response.body.includes('Swagger UI'), true);
   assert.equal(response.body.includes('./static/swagger-initializer.js'), true);
+});
+
+test('dev delay plugin is opt-in', async t => {
+  const createAppWithDelay = async (enabled: boolean) => {
+    const app = Fastify();
+
+    await app.register((await import('@fastify/middie')).default);
+    registerDevDelayPlugin(app, { enabled });
+
+    app.get('/ping', async () => ({ ok: true }));
+
+    return app;
+  };
+
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+
+  t.after(() => {
+    Math.random = originalRandom;
+  });
+
+  const fastApp = await createAppWithDelay(false);
+  const delayedApp = await createAppWithDelay(true);
+
+  t.after(async () => {
+    await fastApp.close();
+    await delayedApp.close();
+  });
+
+  const fastStartedAt = Date.now();
+  const fastResponse = await fastApp.inject({
+    method: 'GET',
+    url: '/ping',
+  });
+  const fastDurationMs = Date.now() - fastStartedAt;
+
+  const delayedStartedAt = Date.now();
+  const delayedResponse = await delayedApp.inject({
+    method: 'GET',
+    url: '/ping',
+  });
+  const delayedDurationMs = Date.now() - delayedStartedAt;
+
+  assert.equal(fastResponse.statusCode, 200);
+  assert.equal(delayedResponse.statusCode, 200);
+  assert.ok(delayedDurationMs >= 280);
+  assert.ok(delayedDurationMs >= fastDurationMs + 200);
 });
 
 test('CORS allowlist returns headers for an explicitly allowed origin', async t => {

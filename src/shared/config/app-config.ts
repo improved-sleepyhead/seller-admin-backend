@@ -11,6 +11,9 @@ export const DEFAULT_DEV_CORS_ALLOWED_ORIGINS = [
 
 export type AppConfig = {
   port: number;
+  dev: {
+    delayEnabled: boolean;
+  };
   cors: {
     allowedOrigins: string[];
   };
@@ -32,6 +35,9 @@ const aiEnabled = aiFeatureEnabled && Boolean(openrouterApiKey);
 
 export const config: AppConfig = {
   port: parsePositiveInt(env.PORT, 8080),
+  dev: {
+    delayEnabled: parseBoolean(env.DEV_DELAY_ENABLED, false),
+  },
   cors: {
     allowedOrigins: parseCsvList(
       env.CORS_ALLOWED_ORIGINS,

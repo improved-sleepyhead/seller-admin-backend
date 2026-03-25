@@ -25,7 +25,9 @@ export const buildApp = async (
   await fastify.register((await import('@fastify/middie')).default);
 
   registerErrorHandlerPlugin(fastify);
-  registerDevDelayPlugin(fastify);
+  registerDevDelayPlugin(fastify, {
+    enabled: config.dev.delayEnabled,
+  });
   registerCorsPlugin(fastify);
   await registerSwaggerPlugin(fastify);
 
