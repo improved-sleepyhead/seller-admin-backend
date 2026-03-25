@@ -30,9 +30,11 @@ type ItemReadDto = {
   category: 'auto' | 'real_estate' | 'electronics';
   title: string;
   description?: string;
-  price: number | null;
+  price: number;
   createdAt: string;
   updatedAt: string;
+  previewImage?: string;
+  images?: string[];
   params: Record<string, unknown>;
   needsRevision?: boolean;
 };
@@ -193,7 +195,7 @@ type ItemUpdateIn =
       category: 'auto';
       title: string;
       description?: string;
-      price: number | null;
+      price: number;
       params: {
         brand: string;
         model: string;
@@ -207,7 +209,7 @@ type ItemUpdateIn =
       category: 'real_estate';
       title: string;
       description?: string;
-      price: number | null;
+      price: number;
       params: {
         type: 'flat' | 'house' | 'room';
         address: string;
@@ -219,7 +221,7 @@ type ItemUpdateIn =
       category: 'electronics';
       title: string;
       description?: string;
-      price: number | null;
+      price: number;
       params: {
         type: 'phone' | 'laptop' | 'misc';
         brand: string;
@@ -325,8 +327,7 @@ type ItemUpdateIn =
   "usage": {
     "inputTokens": 100,
     "outputTokens": 20,
-    "totalTokens": 120,
-    "cost": 0.0012
+    "totalTokens": 120
   }
 }
 ```
@@ -346,8 +347,7 @@ type ItemUpdateIn =
   "usage": {
     "inputTokens": 100,
     "outputTokens": 20,
-    "totalTokens": 120,
-    "cost": 0.0012
+    "totalTokens": 120
   }
 }
 ```
@@ -398,8 +398,7 @@ type ItemUpdateIn =
   "usage": {
     "inputTokens": 100,
     "outputTokens": 20,
-    "totalTokens": 120,
-    "cost": 0.0012
+    "totalTokens": 120
   }
 }
 ```
@@ -428,7 +427,7 @@ event: chunk
 data: {"content":" мир"}
 
 event: done
-data: {"model":"test-model","usage":{"inputTokens":10,"outputTokens":2,"totalTokens":12,"cost":0.0001}}
+data: {"model":"test-model","usage":{"inputTokens":10,"outputTokens":2,"totalTokens":12}}
 ```
 
 Provider-specific поля вроде `choices`, `delta` и raw provider `id` не являются частью публичного SSE-контракта.
