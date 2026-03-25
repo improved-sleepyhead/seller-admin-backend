@@ -226,6 +226,27 @@ test('Swagger JSON exposes the documented frontend-facing routes', async t => {
   assert.ok(paths['/api/ai/price']);
   assert.ok(paths['/api/ai/chat']);
   assert.ok((components.schemas as Record<string, unknown>).ApiErrorResponse);
+
+  const aiDescriptionResponses = (
+    paths['/api/ai/description'] as {
+      post?: {
+        responses?: Record<string, { content?: Record<string, { example?: { code?: string } }> }>;
+      };
+    }
+  ).post?.responses;
+
+  assert.equal(
+    aiDescriptionResponses?.['502']?.content?.['application/json']?.example?.code,
+    'AI_PROVIDER_ERROR',
+  );
+  assert.equal(
+    aiDescriptionResponses?.['503']?.content?.['application/json']?.example?.code,
+    'AI_UNAVAILABLE',
+  );
+  assert.equal(
+    aiDescriptionResponses?.['504']?.content?.['application/json']?.example?.code,
+    'AI_PROVIDER_ERROR',
+  );
 });
 
 test('Swagger UI serves the documentation page', async t => {
@@ -795,6 +816,53 @@ test('AI endpoints return AI_PROVIDER_ERROR when provider response cannot be nor
     ApiErrorResponseSchema.parse(response.json()).code,
     'AI_PROVIDER_ERROR',
   );
+});
+
+test('AI transport errors with a code are normalized to AI_PROVIDER_ERROR', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    const error = new Error('socket hang up') as Error & { code: string };
+    error.code = 'ECONNRESET';
+    throw error;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    payload: validAiPayload,
+  });
+
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(ApiErrorResponseSchema.parse(response.json()), {
+    success: false,
+    code: 'AI_PROVIDER_ERROR',
+    message: 'Failed to receive a valid response from AI provider.',
+  });
 });
 
 test('POST /api/ai/description returns VALIDATION_ERROR for invalid payload', async t => {

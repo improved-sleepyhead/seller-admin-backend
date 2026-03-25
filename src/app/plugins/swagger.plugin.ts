@@ -49,8 +49,27 @@ const createJsonResponse = (
   },
 });
 
-const createErrorResponse = (description: string): Record<string, unknown> =>
-  createJsonResponse('ApiErrorResponse', description);
+const createErrorResponse = (
+  description: string,
+  example: {
+    code: 'VALIDATION_ERROR' | 'NOT_FOUND' | 'AI_UNAVAILABLE' | 'AI_PROVIDER_ERROR';
+    message: string;
+    details?: unknown;
+  },
+): Record<string, unknown> => ({
+  description,
+  content: {
+    'application/json': {
+      schema: createSchemaRef('ApiErrorResponse'),
+      example: {
+        success: false,
+        code: example.code,
+        message: example.message,
+        ...(example.details === undefined ? {} : { details: example.details }),
+      },
+    },
+  },
+});
 
 const createSwaggerDocument = (): Record<string, unknown> => ({
   openapi: '3.1.0',
@@ -177,7 +196,10 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
             'ItemsResponse',
             'Frontend-facing item list response.',
           ),
-          400: createErrorResponse('Query validation failed.'),
+          400: createErrorResponse('Query validation failed.', {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed.',
+          }),
         },
       },
     },
@@ -202,8 +224,14 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
             'ItemReadDto',
             'Frontend-facing item details response.',
           ),
-          400: createErrorResponse('Path validation failed.'),
-          404: createErrorResponse('Item was not found.'),
+          400: createErrorResponse('Path validation failed.', {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed.',
+          }),
+          404: createErrorResponse('Item was not found.', {
+            code: 'NOT_FOUND',
+            message: 'Item not found.',
+          }),
         },
       },
       put: {
@@ -234,8 +262,14 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
             'ItemUpdateSuccessResponse',
             'Item update success response.',
           ),
-          400: createErrorResponse('Payload or path validation failed.'),
-          404: createErrorResponse('Item was not found.'),
+          400: createErrorResponse('Payload or path validation failed.', {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed.',
+          }),
+          404: createErrorResponse('Item was not found.', {
+            code: 'NOT_FOUND',
+            message: 'Item not found.',
+          }),
         },
       },
     },
@@ -268,10 +302,22 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
             'AiDescriptionResponse',
             'Normalized AI description suggestion.',
           ),
-          400: createErrorResponse('Payload validation failed.'),
-          502: createErrorResponse('AI provider returned an invalid response.'),
-          503: createErrorResponse('AI functionality is unavailable.'),
-          504: createErrorResponse('AI provider request timed out.'),
+          400: createErrorResponse('Payload validation failed.', {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed.',
+          }),
+          502: createErrorResponse('AI provider returned an invalid response.', {
+            code: 'AI_PROVIDER_ERROR',
+            message: 'Failed to receive a valid response from AI provider.',
+          }),
+          503: createErrorResponse('AI functionality is unavailable.', {
+            code: 'AI_UNAVAILABLE',
+            message: 'AI features are currently unavailable.',
+          }),
+          504: createErrorResponse('AI provider request timed out.', {
+            code: 'AI_PROVIDER_ERROR',
+            message: 'Failed to receive a valid response from AI provider.',
+          }),
         },
       },
     },
@@ -292,10 +338,22 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
             'AiPriceResponse',
             'Normalized AI price suggestion.',
           ),
-          400: createErrorResponse('Payload validation failed.'),
-          502: createErrorResponse('AI provider returned an invalid response.'),
-          503: createErrorResponse('AI functionality is unavailable.'),
-          504: createErrorResponse('AI provider request timed out.'),
+          400: createErrorResponse('Payload validation failed.', {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed.',
+          }),
+          502: createErrorResponse('AI provider returned an invalid response.', {
+            code: 'AI_PROVIDER_ERROR',
+            message: 'Failed to receive a valid response from AI provider.',
+          }),
+          503: createErrorResponse('AI functionality is unavailable.', {
+            code: 'AI_UNAVAILABLE',
+            message: 'AI features are currently unavailable.',
+          }),
+          504: createErrorResponse('AI provider request timed out.', {
+            code: 'AI_PROVIDER_ERROR',
+            message: 'Failed to receive a valid response from AI provider.',
+          }),
         },
       },
     },
@@ -337,10 +395,22 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
               },
             },
           },
-          400: createErrorResponse('Payload validation failed.'),
-          502: createErrorResponse('AI provider returned an invalid response.'),
-          503: createErrorResponse('AI functionality is unavailable.'),
-          504: createErrorResponse('AI provider request timed out.'),
+          400: createErrorResponse('Payload validation failed.', {
+            code: 'VALIDATION_ERROR',
+            message: 'Request validation failed.',
+          }),
+          502: createErrorResponse('AI provider returned an invalid response.', {
+            code: 'AI_PROVIDER_ERROR',
+            message: 'Failed to receive a valid response from AI provider.',
+          }),
+          503: createErrorResponse('AI functionality is unavailable.', {
+            code: 'AI_UNAVAILABLE',
+            message: 'AI features are currently unavailable.',
+          }),
+          504: createErrorResponse('AI provider request timed out.', {
+            code: 'AI_PROVIDER_ERROR',
+            message: 'Failed to receive a valid response from AI provider.',
+          }),
         },
       },
     },
