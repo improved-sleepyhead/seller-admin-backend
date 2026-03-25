@@ -1,4 +1,10 @@
-import { env, parseBoolean, parseCsvList, parsePositiveInt } from './env.ts';
+import {
+  env,
+  parseBoolean,
+  parseCsvList,
+  parsePositiveInt,
+  parseString,
+} from './env.ts';
 
 export const DEFAULT_DEV_CORS_ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -11,6 +17,7 @@ export const DEFAULT_DEV_CORS_ALLOWED_ORIGINS = [
 
 export type AppConfig = {
   port: number;
+  host: string;
   dev: {
     delayEnabled: boolean;
   };
@@ -35,6 +42,7 @@ const aiEnabled = aiFeatureEnabled && Boolean(openrouterApiKey);
 
 export const config: AppConfig = {
   port: parsePositiveInt(env.PORT, 8080),
+  host: parseString(env.HOST, '0.0.0.0'),
   dev: {
     delayEnabled: parseBoolean(env.DEV_DELAY_ENABLED, false),
   },

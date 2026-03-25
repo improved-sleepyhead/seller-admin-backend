@@ -336,6 +336,7 @@ test('CORS allowlist returns headers for an explicitly allowed origin', async t 
     headers: {
       Origin: 'http://localhost:5173',
       'Access-Control-Request-Method': 'PUT',
+      'Access-Control-Request-Headers': 'Content-Type, X-Trace-Id',
     },
   });
 
@@ -346,9 +347,13 @@ test('CORS allowlist returns headers for an explicitly allowed origin', async t 
   );
   assert.equal(
     response.headers['access-control-allow-methods'],
-    'GET,PUT,POST,OPTIONS',
+    'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   );
-  assert.equal(response.headers['access-control-allow-headers'], 'Content-Type');
+  assert.equal(
+    response.headers['access-control-allow-headers'],
+    'Content-Type, X-Trace-Id',
+  );
+  assert.equal(response.headers['access-control-max-age'], '86400');
   assert.equal(response.headers.vary, 'Origin');
 });
 
@@ -376,6 +381,40 @@ test('CORS allowlist skips headers for a disallowed origin', async t => {
   assert.equal(response.headers['access-control-allow-origin'], undefined);
   assert.equal(response.headers['access-control-allow-methods'], undefined);
   assert.equal(response.headers['access-control-allow-headers'], undefined);
+});
+
+test('CORS wildcard mode accepts arbitrary origins and request headers', async t => {
+  const originalAllowedOrigins = [...config.cors.allowedOrigins];
+  config.cors.allowedOrigins = ['*'];
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    config.cors.allowedOrigins = originalAllowedOrigins;
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'OPTIONS',
+    url: '/api/ai/description',
+    headers: {
+      Origin: 'https://frontend.example.com',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'Authorization, X-Client-Version',
+    },
+  });
+
+  assert.equal(response.statusCode, 204);
+  assert.equal(response.headers['access-control-allow-origin'], '*');
+  assert.equal(
+    response.headers['access-control-allow-methods'],
+    'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  );
+  assert.equal(
+    response.headers['access-control-allow-headers'],
+    'Authorization, X-Client-Version',
+  );
+  assert.equal(response.headers.vary, undefined);
 });
 
 test('item endpoints return normalized DTOs that are safe for runtime validation', async t => {
