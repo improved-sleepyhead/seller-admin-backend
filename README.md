@@ -57,7 +57,7 @@ npm install
 4. Запустите сервер:
 
 ```bash
-node --env-file=.env --import tsx server.ts
+npm start
 ```
 
 По умолчанию backend доступен на `http://localhost:8080`.
@@ -97,7 +97,7 @@ curl -X PUT http://localhost:8080/items/1 \
   }'
 ```
 
-## Запуск в Docker
+## Запуск в Docker (необходим для корректной работы frontend, так как запросы идут на http://localhost/api/)
 
 1. Создайте `.env` из шаблона:
 
@@ -134,9 +134,11 @@ docker compose --env-file .env -f docker-compose.prod.yml up -d --build
 ## Полезные команды
 
 ```bash
+./scripts/test-all.sh
 npm run build
 npm run test:smoke
-node --env-file=.env --import tsx server.ts
+npm start
+npm start:prod
 ```
 
 ## Что используется в деплое
