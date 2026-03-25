@@ -14,6 +14,13 @@ export const DEFAULT_DEV_CORS_ALLOWED_ORIGINS = [
   'http://127.0.0.1:4173',
   'http://127.0.0.1:5173',
 ];
+export const DEFAULT_AI_TIMEOUT_MS = 45000;
+export const MIN_AI_TIMEOUT_MS = 30000;
+
+export const resolveAiTimeoutMs = (value: string | undefined): number => {
+  const parsedTimeoutMs = parsePositiveInt(value, DEFAULT_AI_TIMEOUT_MS);
+  return Math.max(parsedTimeoutMs, MIN_AI_TIMEOUT_MS);
+};
 
 export type AppConfig = {
   port: number;
@@ -55,7 +62,7 @@ export const config: AppConfig = {
   ai: {
     enabled: aiEnabled,
     provider: aiEnabled ? 'openrouter' : null,
-    timeoutMs: parsePositiveInt(env.AI_TIMEOUT_MS, 45000),
+    timeoutMs: resolveAiTimeoutMs(env.AI_TIMEOUT_MS),
     openrouter: {
       apiKey: openrouterApiKey,
       model: env.OPENROUTER_MODEL?.trim() || 'qwen/qwen3-next-80b-a3b-instruct',

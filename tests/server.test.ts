@@ -5,8 +5,11 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import items from 'data/items.json' with { type: 'json' };
 import {
+  DEFAULT_AI_TIMEOUT_MS,
   DEFAULT_DEV_CORS_ALLOWED_ORIGINS,
+  MIN_AI_TIMEOUT_MS,
   config,
+  resolveAiTimeoutMs,
 } from 'src/shared/config/app-config.ts';
 import { registerDevDelayPlugin } from 'src/app/plugins/dev-delay.plugin.ts';
 import { AiChatResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
@@ -202,6 +205,12 @@ test('default CORS config uses explicit localhost dev origins instead of wildcar
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('http://localhost:5173'), true);
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('http://127.0.0.1:5173'), true);
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('*'), false);
+});
+
+test('AI timeout config clamps too-small values to a production-safe minimum', () => {
+  assert.equal(resolveAiTimeoutMs(undefined), DEFAULT_AI_TIMEOUT_MS);
+  assert.equal(resolveAiTimeoutMs('4500'), MIN_AI_TIMEOUT_MS);
+  assert.equal(resolveAiTimeoutMs('60000'), 60000);
 });
 
 test('Swagger JSON exposes the documented frontend-facing routes', async t => {
