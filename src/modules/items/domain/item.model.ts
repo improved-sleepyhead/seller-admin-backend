@@ -5,6 +5,8 @@ export type Item = {
   price: number | null;
   createdAt: string;
   updatedAt: string;
+  previewImage?: string;
+  images?: string[];
 } & (
   | {
       category: 'auto';
@@ -43,7 +45,3 @@ type ElectronicsItemParams = {
   condition?: 'new' | 'used';
   color?: string;
 };
-
-export type ItemSortColumn = Extract<keyof Item, 'title' | 'createdAt'>;
-
-export type SortDirection = 'asc' | 'desc';

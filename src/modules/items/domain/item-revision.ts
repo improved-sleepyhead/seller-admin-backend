@@ -1,9 +1,9 @@
-import type { Item } from './types.ts';
+import type { Item } from './item.model.ts';
 import {
   AutoItemParamsSchema,
   ElectronicsEstateItemParamsSchema,
   RealEstateItemParamsSchema,
-} from './validation.ts';
+} from '../contracts/item-update.contract.ts';
 
 export const doesItemNeedRevision = (item: Item): boolean =>
   !Boolean(item.description) ||

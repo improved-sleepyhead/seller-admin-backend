@@ -1,6 +1,18 @@
 import { z } from 'zod';
-import { ITEM_CATEGORIES } from './constants.ts';
-import { ItemSortColumn, SortDirection } from './types.ts';
+
+import { ITEM_CATEGORIES } from 'src/shared/constants/item-categories.ts';
+import { INPUT_LIMITS } from 'src/shared/constants/input-limits.ts';
+
+const NonEmptyTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(INPUT_LIMITS.item.titleMaxLength);
+
+const OptionalDescriptionSchema = z
+  .string()
+  .max(INPUT_LIMITS.item.descriptionMaxLength)
+  .optional();
 
 const AutoTransmissionSchema = z.enum(['automatic', 'manual']);
 
@@ -35,55 +47,30 @@ export const ElectronicsEstateItemParamsSchema = z.strictObject({
 
 const CategorySchema = z.enum(Object.values(ITEM_CATEGORIES));
 
-export const ItemsGetInQuerySchema = z.object({
-  q: z.string().trim().optional().default(''),
-  limit: z
-    .string()
-    .optional()
-    .transform(val => (val ? parseInt(val, 10) : undefined))
-    .pipe(z.number().int().positive().optional().default(10)),
-  skip: z
-    .string()
-    .optional()
-    .transform(val => (val ? parseInt(val, 10) : undefined))
-    .pipe(z.number().int().min(0).optional().default(0)),
-  categories: z
-    .string()
-    .optional()
-    .transform(val => (val ? val.split(',').map(s => s.trim()) : undefined))
-    .pipe(z.array(CategorySchema).optional()),
-  needsRevision: z
-    .string()
-    .optional()
-    .transform(val => {
-      if (!val) return undefined;
-      return val === 'true' || val === '1';
-    })
-    .pipe(z.boolean().optional().default(false)),
-  sortColumn: z.enum<ItemSortColumn[]>(['title', 'createdAt']).optional(),
-  sortDirection: z.enum<SortDirection[]>(['asc', 'desc']).optional(),
-});
-
 export const ItemUpdateInSchema = z
   .object({
     category: CategorySchema,
-    title: z.string(),
-    description: z.string().optional(),
+    title: NonEmptyTitleSchema,
+    description: OptionalDescriptionSchema,
     price: z.number().min(0),
   })
   .and(
     z.discriminatedUnion('category', [
       z.object({
         category: z.literal(ITEM_CATEGORIES.AUTO),
-        params: AutoItemParamsSchema.partial(),
+        params: AutoItemParamsSchema,
       }),
       z.object({
         category: z.literal(ITEM_CATEGORIES.REAL_ESTATE),
-        params: RealEstateItemParamsSchema.partial(),
+        params: RealEstateItemParamsSchema,
       }),
       z.object({
         category: z.literal(ITEM_CATEGORIES.ELECTRONICS),
-        params: ElectronicsEstateItemParamsSchema.partial(),
+        params: ElectronicsEstateItemParamsSchema,
       }),
     ]),
   );
+
+export const AiItemInputSchema = ItemUpdateInSchema;
+
+export type ItemUpdateIn = z.infer<typeof ItemUpdateInSchema>;

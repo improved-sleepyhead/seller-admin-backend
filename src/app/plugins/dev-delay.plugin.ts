@@ -1,0 +1,16 @@
+import type { FastifyInstance } from 'fastify';
+
+export const registerDevDelayPlugin = (
+  fastify: FastifyInstance,
+  options?: {
+    enabled?: boolean;
+  },
+): void => {
+  if (!options?.enabled) {
+    return;
+  }
+
+  fastify.use((_, __, next) =>
+    new Promise(res => setTimeout(res, 300 + Math.random() * 700)).then(next),
+  );
+};
