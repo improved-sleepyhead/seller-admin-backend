@@ -2,33 +2,52 @@
 
 ## Назначение документа
 
-Этот документ описывает, что было улучшено в backend-части проекта, какие возможности были добавлены и как текущее состояние backend было приведено к целевым требованиям из [Backend_PRD_detailed.md](./Backend_PRD_detailed.md).
+Этот документ описывает текущее состояние backend: какие возможности уже реализованы, какие инженерные проблемы были закрыты и за счёт каких решений backend стал удобнее для frontend, эксплуатации и развития.
 
 Основные документы проекта:
 
-- [Backend_PRD_detailed.md](./Backend_PRD_detailed.md)
-- [tasks.json](./tasks.json)
-- [progress.md](./progress.md)
+- [README.md](./README.md)
 - [API_CONTRACT.md](./API_CONTRACT.md)
+- [FRONTEND_INTEGRATION.md](./FRONTEND_INTEGRATION.md)
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 
-На дату `2026-03-25` в [tasks.json](./tasks.json) все задачи от `TASK-001` до `TASK-026` имеют статус `done`.
-
-## Что было улучшено
+## Что изменилось по сравнению с исходной заготовкой
 
 ### 1. Backend стал стабильным frontend-facing API
 
-Изначальная цель проекта заключалась в том, чтобы backend стал предсказуемым внешним API для frontend, а не просто тонким слоем над данными. Эта часть была закрыта в первую очередь.
+Backend больше не отдаёт наружу неоднородные формы данных и не заставляет frontend угадывать поведение endpoint'ов.
 
-Что сделано:
+Что есть сейчас:
 
-- `GET /items` теперь возвращает стабильную форму `{ items, total }`.
-- Список объявлений поддерживает backend-driven поиск, фильтрацию, сортировку и пагинацию.
-- Добавлена сортировка по `price`, совместимая с frontend URL-state.
-- `GET /items/:id` возвращает один нормализованный объект объявления.
-- `PUT /items/:id` работает как полное обновление объявления и требует полный category-specific payload.
-- Публичные item DTO нормализуются перед отдачей наружу и пригодны для runtime-валидации на frontend.
-- Добавлена поддержка опциональных `previewImage` и `images`, не ломающая старые записи.
+- `GET /items` всегда возвращает `{ items, total }`.
+- `GET /items/:id` возвращает один объект объявления без лишней обёртки.
+- `PUT /items/:id` работает как полная замена объявления, а не как частичный patch.
+- read-side DTO нормализован перед отправкой клиенту и пригоден для runtime-валидации.
+- список поддерживает server-side поиск, фильтрацию, сортировку и пагинацию.
+
+Пример стабильного ответа списка:
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "category": "auto",
+      "title": "Почти новая Mitsubishi Lancer",
+      "description": "",
+      "price": 300000,
+      "createdAt": "2026-02-12T00:00:00.000Z",
+      "updatedAt": "2026-02-12T00:00:00.000Z",
+      "params": {
+        "brand": "Mitsubishi",
+        "model": "Lancer"
+      },
+      "needsRevision": true
+    }
+  ],
+  "total": 1
+}
+```
 
 Подтверждающие файлы:
 
@@ -38,20 +57,33 @@
 - [src/modules/items/contracts/item-update.contract.ts](./src/modules/items/contracts/item-update.contract.ts)
 - [src/modules/items/mapper/item.mapper.ts](./src/modules/items/mapper/item.mapper.ts)
 
-Связанные задачи:
+### 2. Ошибки и валидация приведены к одному публичному контракту
 
-- `TASK-004`, `TASK-005`, `TASK-006`, `TASK-007`, `TASK-008`, `TASK-023`, `TASK-025`
+Раньше подобные проекты часто отдают разные тела ошибок из разных route handler'ов. Здесь это поведение сведено к одному контракту.
 
-### 2. Введён единый публичный формат ошибок и строгая валидация
+Что есть сейчас:
 
-Одной из ключевых проблем исходного backend было отсутствие единого error contract. Это было исправлено.
+- любая публичная ошибка возвращается в формате `{ success: false, code, message, details? }`;
+- ошибки валидации и доменные ошибки приводятся к стабильному виду;
+- входные payload'ы режутся на уровне схем до выполнения бизнес-логики;
+- наружу не уходят stack trace, provider debug payload'ы и чувствительные внутренние детали.
 
-Что сделано:
+Пример ошибки:
 
-- Все публичные ошибки приведены к формату `{ success: false, code, message, details? }`.
-- Ошибки валидации, `NOT_FOUND`, `AI_UNAVAILABLE`, `AI_PROVIDER_ERROR` и `INTERNAL_ERROR` теперь обрабатываются единообразно.
-- Слишком большие, пустые и некорректные payload'ы режутся на уровне валидации до бизнес-логики.
-- Публичные ответы больше не отдают stack trace, сырые provider payload'ы и чувствительные внутренние детали.
+```json
+{
+  "success": false,
+  "code": "VALIDATION_ERROR",
+  "message": "Request validation failed.",
+  "details": {
+    "properties": {
+      "limit": {
+        "errors": ["Invalid input: expected number, received NaN"]
+      }
+    }
+  }
+}
+```
 
 Подтверждающие файлы:
 
@@ -59,26 +91,35 @@
 - [src/shared/errors/app-error.ts](./src/shared/errors/app-error.ts)
 - [src/shared/errors/api-error.mapper.ts](./src/shared/errors/api-error.mapper.ts)
 - [src/shared/constants/input-limits.ts](./src/shared/constants/input-limits.ts)
-- [API_CONTRACT.md](./API_CONTRACT.md)
 
-Связанные задачи:
+### 3. AI-интеграция изолирована внутри backend
 
-- `TASK-003`, `TASK-009`, `TASK-015`, `TASK-023`
+Frontend не работает с AI-провайдером напрямую. Все вызовы, prompt-building и нормализация ответов происходят на стороне backend.
 
-### 3. AI-интеграция перенесена в безопасный backend-owned слой
+Что есть сейчас:
 
-Backend теперь выполняет роль безопасного прокси между frontend и OpenRouter, как и требовал PRD.
+- `GET /api/ai/status` позволяет заранее понять, включены ли AI-функции;
+- `POST /api/ai/description` возвращает `{ suggestion, model?, usage? }`;
+- `POST /api/ai/price` возвращает `{ suggestedPrice, reasoning, currency: 'RUB', model?, usage? }`;
+- `POST /api/ai/chat` поддерживает JSON-режим и streaming через SSE;
+- провайдерский transport скрыт внутри AI-модуля;
+- backend не отдаёт наружу raw payload, `choices`, `delta` и другие внутренние поля провайдера.
 
-Что сделано:
+Пример нормализованного AI-ответа:
 
-- Добавлен `GET /api/ai/status`, чтобы frontend мог явно понять, доступны ли AI-функции.
-- Добавлен `POST /api/ai/description` с нормализованным ответом `{ suggestion, model?, usage? }`.
-- Добавлен `POST /api/ai/price` с нормализованным ответом `{ suggestedPrice, reasoning, currency: 'RUB', model?, usage? }`.
-- Добавлен `POST /api/ai/chat` с обычным JSON-режимом и streaming через SSE.
-- Prompt-building вынесен на backend и разбит на базовый prompt и endpoint-specific инструкции.
-- Логика OpenRouter изолирована внутри provider-модуля и не протекает в публичный API.
-- Добавлены timeout, обработка client disconnect и нормализованное маппирование provider errors.
-- Backend не отдаёт наружу сырой формат OpenRouter.
+```json
+{
+  "suggestedPrice": 512345,
+  "reasoning": "Цена выглядит реалистичной для категории, состояния и набора характеристик.",
+  "currency": "RUB",
+  "model": "openrouter/test-model",
+  "usage": {
+    "inputTokens": 87,
+    "outputTokens": 22,
+    "totalTokens": 109
+  }
+}
+```
 
 Подтверждающие файлы:
 
@@ -86,26 +127,19 @@ Backend теперь выполняет роль безопасного прок
 - [src/modules/ai/contracts/ai-response.contract.ts](./src/modules/ai/contracts/ai-response.contract.ts)
 - [src/modules/ai/contracts/ai-stream.contract.ts](./src/modules/ai/contracts/ai-stream.contract.ts)
 - [src/modules/ai/prompts/base.prompt.ts](./src/modules/ai/prompts/base.prompt.ts)
-- [src/modules/ai/prompts/description.prompt.ts](./src/modules/ai/prompts/description.prompt.ts)
-- [src/modules/ai/prompts/price.prompt.ts](./src/modules/ai/prompts/price.prompt.ts)
-- [src/modules/ai/prompts/chat.prompt.ts](./src/modules/ai/prompts/chat.prompt.ts)
 - [src/modules/ai/providers/openrouter/openrouter.client.ts](./src/modules/ai/providers/openrouter/openrouter.client.ts)
-- [API_CONTRACT.md](./API_CONTRACT.md)
 
-Связанные задачи:
+### 4. Конфигурация, CORS и логирование стали безопаснее
 
-- `TASK-010`, `TASK-011`, `TASK-012`, `TASK-013`, `TASK-014`, `TASK-016`, `TASK-017`, `TASK-018`, `TASK-019`, `TASK-020`
+Backend готов к браузерному использованию и более предсказуем в эксплуатации.
 
-### 4. Усилены конфигурирование, CORS и безопасная эксплуатация
+Что есть сейчас:
 
-Backend был подготовлен к реальному браузерному использованию и более предсказуемому деплою.
-
-Что сделано:
-
-- Конфигурация вынесена в единый типизированный config layer.
-- Приложение стартует даже без `OPENROUTER_API_KEY`; в таком режиме AI корректно помечается как disabled.
-- CORS и preflight вынесены в централизованный plugin и поддерживают allowlist.
-- Логирование очищено от query string, секретов и полного пользовательского текста.
+- конфигурация собрана в один типизированный слой;
+- приложение стартует даже без `OPENROUTER_API_KEY`;
+- в disabled-режиме AI-контракты остаются предсказуемыми;
+- CORS и preflight вынесены в централизованный plugin;
+- логирование очищено от секретов, query string и лишнего пользовательского текста.
 
 Подтверждающие файлы:
 
@@ -114,21 +148,31 @@ Backend был подготовлен к реальному браузерном
 - [src/app/plugins/cors.plugin.ts](./src/app/plugins/cors.plugin.ts)
 - [src/shared/logging/logger.ts](./src/shared/logging/logger.ts)
 
-Связанные задачи:
+### 5. Архитектура стала модульной и предсказуемой
 
-- `TASK-001`, `TASK-002`, `TASK-020`, `TASK-021`
+Кодовая база больше не держится на одном перегруженном entrypoint-файле.
 
-### 5. Архитектура backend переведена на модульную схему
+Что есть сейчас:
 
-Кодовая база больше не держится на одном перегруженном entrypoint-файле и плоской структуре.
+- `server.ts` выполняет роль тонкой точки входа;
+- `src/app` отвечает за bootstrap и composition root;
+- `src/shared` содержит общие cross-cutting части;
+- item- и AI-логика разнесены по отдельным модулям;
+- тесты вынесены в `tests/` и не смешиваются с production-кодом.
 
-Что сделано:
+Пример фактической структуры:
 
-- `server.ts` оставлен тонкой точкой входа.
-- Bootstrap и composition root вынесены в `src/app`.
-- Общие cross-cutting части выделены в `src/shared`.
-- Item- и AI-логика разнесены в отдельные модули с `routes`, `service`, `contracts`, `mapper`, `repository` и `providers`.
-- Тесты вынесены в `tests/`, отдельно от production-кода.
+```text
+src/
+  app/
+  modules/
+    ai/
+    items/
+  shared/
+tests/
+  modules/
+    ai/
+```
 
 Подтверждающие файлы:
 
@@ -137,21 +181,17 @@ Backend был подготовлен к реальному браузерном
 - [src/app/bootstrap.ts](./src/app/bootstrap.ts)
 - [src/app/build-app.ts](./src/app/build-app.ts)
 
-Связанные задачи:
+### 6. Документация, тесты и деплой стали практичнее
 
-- `TASK-026`
+Проект теперь удобнее использовать без знания внутренней истории разработки.
 
-### 6. Улучшены документация, тестирование и готовность к деплою
+Что есть сейчас:
 
-Проект стал заметно удобнее для онбординга, ручной проверки и эксплуатации.
-
-Что сделано:
-
-- Подготовлен frontend-facing контракт в [API_CONTRACT.md](./API_CONTRACT.md).
-- Подготовлено описание архитектуры в [ARCHITECTURE.md](./ARCHITECTURE.md).
-- Добавлены Swagger/OpenAPI-описание и Swagger UI по пути `/documentation`.
-- Добавлены smoke/e2e-проверки основных backend-сценариев.
-- Добавлена production-сборка через Docker и запуск через Docker Compose с `nginx` перед API.
+- публичный API описан в [API_CONTRACT.md](./API_CONTRACT.md);
+- для frontend есть отдельный [FRONTEND_INTEGRATION.md](./FRONTEND_INTEGRATION.md);
+- доступен Swagger UI по пути `/documentation`;
+- есть smoke/e2e-проверки основных сценариев;
+- production-режим поднимается через Docker Compose и `nginx`.
 
 Подтверждающие файлы:
 
@@ -162,28 +202,23 @@ Backend был подготовлен к реальному браузерном
 - [docker-compose.prod.yml](./docker-compose.prod.yml)
 - [nginx/default.conf.template](./nginx/default.conf.template)
 
-Связанные задачи:
+## Практический эффект для команды
 
-- `TASK-022`, `TASK-024`
+Текущее состояние backend даёт команде:
 
-## Итог по проекту
-
-Если сравнивать текущее состояние с целями из [Backend_PRD_detailed.md](./Backend_PRD_detailed.md), то backend теперь даёт:
-
-- стабильный публичный API для списка, карточки, сохранения и AI-сценариев;
-- единый и пригодный для frontend error DTO;
+- стабильный API для списка, карточки, сохранения и AI-сценариев;
+- единый и пригодный для frontend runtime validation error DTO;
 - backend-owned AI prompts, AI transport и SSE-контракт без provider-specific логики на клиенте;
 - безопасную работу с конфигом, логами и режимом отключённого AI;
 - модульную архитектуру, которую проще сопровождать и расширять;
-- набор документации, Swagger UI, smoke/e2e-проверок и production Docker deployment.
+- набор документации, smoke/e2e-проверок и production Docker deployment.
 
 ## Рекомендуемый порядок чтения
 
-Для нового участника проекта разумный порядок такой:
+Для нового участника проекта удобный порядок такой:
 
 1. [README.md](./README.md)
-2. [PROJECT_IMPROVEMENTS.md](./PROJECT_IMPROVEMENTS.md)
+2. [FRONTEND_INTEGRATION.md](./FRONTEND_INTEGRATION.md)
 3. [API_CONTRACT.md](./API_CONTRACT.md)
 4. [ARCHITECTURE.md](./ARCHITECTURE.md)
-5. [Backend_PRD_detailed.md](./Backend_PRD_detailed.md)
-6. [progress.md](./progress.md)
+5. [PROJECT_IMPROVEMENTS.md](./PROJECT_IMPROVEMENTS.md)
