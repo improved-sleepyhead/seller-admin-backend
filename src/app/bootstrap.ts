@@ -14,13 +14,14 @@ export const isMainModule = (
 export const startServer = async (): Promise<void> => {
   const fastify = await buildApp();
   const port = config.port;
+  const host = config.host;
 
-  fastify.listen({ port }, function (err, _address) {
+  fastify.listen({ port, host }, function (err, _address) {
     if (err) {
       fastify.log.error(err);
       process.exit(1);
     }
 
-    fastify.log.debug(`Server is listening on port ${port}`);
+    fastify.log.debug(`Server is listening on ${host}:${port}`);
   });
 };

@@ -1,5 +1,6 @@
 export const env = {
   PORT: process.env.PORT,
+  HOST: process.env.HOST,
   DEV_DELAY_ENABLED: process.env.DEV_DELAY_ENABLED,
   AI_ENABLED: process.env.AI_ENABLED,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
@@ -31,6 +32,14 @@ export const parsePositiveInt = (
 
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+export const parseString = (
+  value: string | undefined,
+  fallback: string,
+): string => {
+  const normalized = value?.trim();
+  return normalized ? normalized : fallback;
 };
 
 export const parseCsvList = (
