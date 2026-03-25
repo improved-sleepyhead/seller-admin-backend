@@ -32,6 +32,7 @@ await build({
     '.json': 'json',
   },
   outfile: resolveProjectPath('dist/server.js'),
+  packages: 'external',
   platform: 'node',
   plugins: [projectAliasesPlugin],
   sourcemap: true,

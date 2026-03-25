@@ -1,0 +1,16 @@
+.git
+.gitignore
+.playwright-cli
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+progress.md
+tasks.json
+ARCHITECTURE.md
+API_CONTRACT.md
+tests
+*.log
+*.local
