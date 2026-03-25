@@ -11,6 +11,7 @@ import { createLoggerOptions } from 'src/shared/logging/logger.ts';
 import { registerCorsPlugin } from './plugins/cors.plugin.ts';
 import { registerDevDelayPlugin } from './plugins/dev-delay.plugin.ts';
 import { registerErrorHandlerPlugin } from './plugins/error-handler.plugin.ts';
+import { registerSwaggerPlugin } from './plugins/swagger.plugin.ts';
 
 export const buildApp = async (
   options?: {
@@ -24,8 +25,11 @@ export const buildApp = async (
   await fastify.register((await import('@fastify/middie')).default);
 
   registerErrorHandlerPlugin(fastify);
-  registerDevDelayPlugin(fastify);
+  registerDevDelayPlugin(fastify, {
+    enabled: config.dev.delayEnabled,
+  });
   registerCorsPlugin(fastify);
+  await registerSwaggerPlugin(fastify);
 
   const openRouterClient = createOpenRouterClient(config.ai, fastify.log);
   const itemsService = createItemsService(createInMemoryItemsRepository());

@@ -3,6 +3,12 @@ import { treeifyError, ZodError } from 'zod';
 
 import { ApiErrorResponse, AppError } from './app-error.ts';
 
+const isJsonBodyParseError = (
+  error: Partial<FastifyError> | undefined,
+): boolean =>
+  error?.code === 'FST_ERR_CTP_INVALID_JSON_BODY' ||
+  error?.code === 'FST_ERR_CTP_EMPTY_JSON_BODY';
+
 export const toApiErrorResponse = (
   error: unknown,
 ): { statusCode: number; body: ApiErrorResponse } => {
@@ -31,6 +37,17 @@ export const toApiErrorResponse = (
   }
 
   const fastifyError = error as Partial<FastifyError> | undefined;
+
+  if (isJsonBodyParseError(fastifyError)) {
+    return {
+      statusCode: 400,
+      body: {
+        success: false,
+        code: 'VALIDATION_ERROR',
+        message: fastifyError.message || 'Request validation failed.',
+      },
+    };
+  }
 
   if (fastifyError?.validation) {
     return {

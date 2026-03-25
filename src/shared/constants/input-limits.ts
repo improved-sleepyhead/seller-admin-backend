@@ -8,5 +8,10 @@ export const INPUT_LIMITS = {
     userMessageMaxLength: 2000,
     historyMessageMaxLength: 2000,
     historyMaxItems: 20,
+    completionMaxTokens: {
+      description: 1200,
+      price: 300,
+      chat: 400,
+    },
   },
 } as const;

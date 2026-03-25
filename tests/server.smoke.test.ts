@@ -504,6 +504,20 @@ test(
       'VALIDATION_ERROR',
     );
 
+    const malformedAiJsonResult = await fetchJson(`${address}/api/ai/description`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: '{"item":',
+    });
+
+    assert.equal(malformedAiJsonResult.response.status, 400);
+    assert.equal(
+      ApiErrorResponseSchema.parse(malformedAiJsonResult.body).code,
+      'VALIDATION_ERROR',
+    );
+
     const aiUnavailableResult = await fetchJson(`${address}/api/ai/description`, {
       method: 'POST',
       headers: {

@@ -1,5 +1,6 @@
 export const env = {
   PORT: process.env.PORT,
+  DEV_DELAY_ENABLED: process.env.DEV_DELAY_ENABLED,
   AI_ENABLED: process.env.AI_ENABLED,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL,

@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
+import Fastify from 'fastify';
 import items from 'data/items.json' with { type: 'json' };
 import {
   DEFAULT_DEV_CORS_ALLOWED_ORIGINS,
   config,
 } from 'src/shared/config/app-config.ts';
+import { registerDevDelayPlugin } from 'src/app/plugins/dev-delay.plugin.ts';
 import { AiChatResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiDescriptionResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiPriceResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
@@ -19,6 +21,7 @@ import {
 } from 'src/modules/items/contracts/item-response.contract.ts';
 import { ApiErrorResponseSchema } from 'src/shared/contracts/api-error.contract.ts';
 import { buildApp } from 'src/app/build-app.ts';
+import { INPUT_LIMITS } from 'src/shared/constants/input-limits.ts';
 
 const validAiPayload = {
   item: items[0],
@@ -38,6 +41,8 @@ const validAiChatPayload = {
   ],
   userMessage: 'Сформулируй короткий ответ для покупателя про состояние машины.',
 };
+
+const invalidJsonPayload = '{"item":';
 
 const createMockResponse = (body: unknown, init?: ResponseInit): Response =>
   new Response(JSON.stringify(body), {
@@ -197,6 +202,121 @@ test('default CORS config uses explicit localhost dev origins instead of wildcar
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('http://localhost:5173'), true);
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('http://127.0.0.1:5173'), true);
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('*'), false);
+});
+
+test('Swagger JSON exposes the documented frontend-facing routes', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/documentation/json',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type']?.includes('application/json'), true);
+
+  const body = response.json() as Record<string, unknown>;
+  const paths = body.paths as Record<string, unknown>;
+  const components = body.components as Record<string, unknown>;
+
+  assert.equal(body.openapi, '3.1.0');
+  assert.ok(paths['/items']);
+  assert.ok(paths['/items/{id}']);
+  assert.ok(paths['/api/ai/status']);
+  assert.ok(paths['/api/ai/description']);
+  assert.ok(paths['/api/ai/price']);
+  assert.ok(paths['/api/ai/chat']);
+  assert.ok((components.schemas as Record<string, unknown>).ApiErrorResponse);
+
+  const aiDescriptionResponses = (
+    paths['/api/ai/description'] as {
+      post?: {
+        responses?: Record<string, { content?: Record<string, { example?: { code?: string } }> }>;
+      };
+    }
+  ).post?.responses;
+
+  assert.equal(
+    aiDescriptionResponses?.['502']?.content?.['application/json']?.example?.code,
+    'AI_PROVIDER_ERROR',
+  );
+  assert.equal(
+    aiDescriptionResponses?.['503']?.content?.['application/json']?.example?.code,
+    'AI_UNAVAILABLE',
+  );
+  assert.equal(
+    aiDescriptionResponses?.['504']?.content?.['application/json']?.example?.code,
+    'AI_PROVIDER_ERROR',
+  );
+});
+
+test('Swagger UI serves the documentation page', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/documentation/',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type']?.includes('text/html'), true);
+  assert.equal(response.body.includes('Swagger UI'), true);
+  assert.equal(response.body.includes('./static/swagger-initializer.js'), true);
+});
+
+test('dev delay plugin is opt-in', async t => {
+  const createAppWithDelay = async (enabled: boolean) => {
+    const app = Fastify();
+
+    await app.register((await import('@fastify/middie')).default);
+    registerDevDelayPlugin(app, { enabled });
+
+    app.get('/ping', async () => ({ ok: true }));
+
+    return app;
+  };
+
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+
+  t.after(() => {
+    Math.random = originalRandom;
+  });
+
+  const fastApp = await createAppWithDelay(false);
+  const delayedApp = await createAppWithDelay(true);
+
+  t.after(async () => {
+    await fastApp.close();
+    await delayedApp.close();
+  });
+
+  const fastStartedAt = Date.now();
+  const fastResponse = await fastApp.inject({
+    method: 'GET',
+    url: '/ping',
+  });
+  const fastDurationMs = Date.now() - fastStartedAt;
+
+  const delayedStartedAt = Date.now();
+  const delayedResponse = await delayedApp.inject({
+    method: 'GET',
+    url: '/ping',
+  });
+  const delayedDurationMs = Date.now() - delayedStartedAt;
+
+  assert.equal(fastResponse.statusCode, 200);
+  assert.equal(delayedResponse.statusCode, 200);
+  assert.ok(delayedDurationMs >= 280);
+  assert.ok(delayedDurationMs >= fastDurationMs + 200);
 });
 
 test('CORS allowlist returns headers for an explicitly allowed origin', async t => {
@@ -695,6 +815,10 @@ test('POST /api/ai/description returns normalized suggestion for empty descripti
     | undefined;
 
   assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.description,
+  );
 });
 
 test('AI endpoints return AI_PROVIDER_ERROR when provider response cannot be normalized', async t => {
@@ -750,6 +874,53 @@ test('AI endpoints return AI_PROVIDER_ERROR when provider response cannot be nor
   );
 });
 
+test('AI transport errors with a code are normalized to AI_PROVIDER_ERROR', async t => {
+  const originalAiConfig = structuredClone(config.ai);
+  config.ai = {
+    ...originalAiConfig,
+    enabled: true,
+    provider: 'openrouter',
+    openrouter: {
+      ...originalAiConfig.openrouter,
+      apiKey: 'test-openrouter-key',
+    },
+  };
+
+  t.after(() => {
+    config.ai = originalAiConfig;
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    const error = new Error('socket hang up') as Error & { code: string };
+    error.code = 'ECONNRESET';
+    throw error;
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    payload: validAiPayload,
+  });
+
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(ApiErrorResponseSchema.parse(response.json()), {
+    success: false,
+    code: 'AI_PROVIDER_ERROR',
+    message: 'Failed to receive a valid response from AI provider.',
+  });
+});
+
 test('POST /api/ai/description returns VALIDATION_ERROR for invalid payload', async t => {
   const app = await buildApp();
 
@@ -768,6 +939,30 @@ test('POST /api/ai/description returns VALIDATION_ERROR for invalid payload', as
     ApiErrorResponseSchema.parse(response.json()).code,
     'VALIDATION_ERROR',
   );
+});
+
+test('POST /api/ai/description returns VALIDATION_ERROR for malformed JSON', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    headers: {
+      'content-type': 'application/json',
+    },
+    payload: invalidJsonPayload,
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(ApiErrorResponseSchema.parse(response.json()), {
+    success: false,
+    code: 'VALIDATION_ERROR',
+    message: "Body is not valid JSON but content-type is set to 'application/json'",
+  });
 });
 
 test('POST /api/ai/price returns normalized suggested price and reasoning', async t => {
@@ -849,6 +1044,10 @@ test('POST /api/ai/price returns normalized suggested price and reasoning', asyn
     | undefined;
 
   assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.price,
+  );
 });
 
 test('POST /api/ai/price returns AI_PROVIDER_ERROR for invalid provider response', async t => {
@@ -989,6 +1188,10 @@ test('POST /api/ai/chat returns normalized assistant message', async t => {
     | undefined;
 
   assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.chat,
+  );
 });
 
 test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', async t => {
@@ -1010,6 +1213,52 @@ test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', asyn
         },
       ],
     },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
+});
+
+test('POST /api/ai/price returns VALIDATION_ERROR for malformed JSON', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/price',
+    headers: {
+      'content-type': 'application/json',
+    },
+    payload: invalidJsonPayload,
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
+});
+
+test('POST /api/ai/chat returns VALIDATION_ERROR for malformed JSON', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/chat',
+    headers: {
+      'content-type': 'application/json',
+    },
+    payload: invalidJsonPayload,
   });
 
   assert.equal(response.statusCode, 400);
@@ -1119,6 +1368,10 @@ test('POST /api/ai/chat streams backend-owned SSE events without provider-specif
   }
 
   assert.equal(capturedRequestBody?.stream, true);
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.chat,
+  );
 });
 
 test('POST /api/ai/chat emits SSE error event when provider stream becomes invalid', async t => {

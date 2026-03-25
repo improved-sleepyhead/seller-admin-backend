@@ -1,5 +1,9 @@
 import { AppConfig } from 'src/shared/config/app-config.ts';
-import { aiProviderError, aiUnavailableError } from 'src/shared/errors/app-error.ts';
+import {
+  AppError,
+  aiProviderError,
+  aiUnavailableError,
+} from 'src/shared/errors/app-error.ts';
 
 import {
   buildRequestBody,
@@ -155,7 +159,7 @@ export const createOpenRouterClient = (
           throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
         }
 
-        if (error instanceof Error && 'code' in error) {
+        if (error instanceof AppError) {
           throw error;
         }
 
@@ -368,7 +372,7 @@ export const createOpenRouterClient = (
           throw aiProviderError(OPENROUTER_ERROR_MESSAGE);
         }
 
-        if (error instanceof Error && 'code' in error) {
+        if (error instanceof AppError) {
           throw error;
         }
 

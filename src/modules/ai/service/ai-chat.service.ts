@@ -129,6 +129,7 @@ export const generateChatResponse = async (
       userMessage,
     }),
     signal,
+    maxTokens: INPUT_LIMITS.ai.completionMaxTokens.chat,
     responseFormat: {
       type: 'json_schema',
       json_schema: {
@@ -175,6 +176,7 @@ export const streamChatResponse = async (
         userMessage,
       }),
       signal,
+      maxTokens: INPUT_LIMITS.ai.completionMaxTokens.chat,
     },
     {
       onResponseStart: async ({ model }) => {
