@@ -71,6 +71,7 @@ export const generateDescriptionSuggestion = async (
     endpoint: 'description',
     messages: buildDescriptionPromptMessages(item),
     signal: options?.signal,
+    maxTokens: INPUT_LIMITS.ai.completionMaxTokens.description,
     responseFormat: {
       type: 'json_schema',
       json_schema: {

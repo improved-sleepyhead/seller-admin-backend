@@ -19,6 +19,7 @@ import {
 } from 'src/modules/items/contracts/item-response.contract.ts';
 import { ApiErrorResponseSchema } from 'src/shared/contracts/api-error.contract.ts';
 import { buildApp } from 'src/app/build-app.ts';
+import { INPUT_LIMITS } from 'src/shared/constants/input-limits.ts';
 
 const validAiPayload = {
   item: items[0],
@@ -763,6 +764,10 @@ test('POST /api/ai/description returns normalized suggestion for empty descripti
     | undefined;
 
   assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.description,
+  );
 });
 
 test('AI endpoints return AI_PROVIDER_ERROR when provider response cannot be normalized', async t => {
@@ -964,6 +969,10 @@ test('POST /api/ai/price returns normalized suggested price and reasoning', asyn
     | undefined;
 
   assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.price,
+  );
 });
 
 test('POST /api/ai/price returns AI_PROVIDER_ERROR for invalid provider response', async t => {
@@ -1104,6 +1113,10 @@ test('POST /api/ai/chat returns normalized assistant message', async t => {
     | undefined;
 
   assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.chat,
+  );
 });
 
 test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', async t => {
@@ -1234,6 +1247,10 @@ test('POST /api/ai/chat streams backend-owned SSE events without provider-specif
   }
 
   assert.equal(capturedRequestBody?.stream, true);
+  assert.equal(
+    capturedRequestBody?.max_tokens,
+    INPUT_LIMITS.ai.completionMaxTokens.chat,
+  );
 });
 
 test('POST /api/ai/chat emits SSE error event when provider stream becomes invalid', async t => {

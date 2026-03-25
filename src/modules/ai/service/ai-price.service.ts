@@ -102,6 +102,7 @@ export const generatePriceSuggestion = async (
     endpoint: 'price',
     messages: buildPricePromptMessages(item),
     signal: options?.signal,
+    maxTokens: INPUT_LIMITS.ai.completionMaxTokens.price,
     responseFormat: {
       type: 'json_schema',
       json_schema: {
