@@ -40,6 +40,8 @@ const validAiChatPayload = {
   userMessage: 'Сформулируй короткий ответ для покупателя про состояние машины.',
 };
 
+const invalidJsonPayload = '{"item":';
+
 const createMockResponse = (body: unknown, init?: ResponseInit): Response =>
   new Response(JSON.stringify(body), {
     headers: {
@@ -890,6 +892,30 @@ test('POST /api/ai/description returns VALIDATION_ERROR for invalid payload', as
   );
 });
 
+test('POST /api/ai/description returns VALIDATION_ERROR for malformed JSON', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/description',
+    headers: {
+      'content-type': 'application/json',
+    },
+    payload: invalidJsonPayload,
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(ApiErrorResponseSchema.parse(response.json()), {
+    success: false,
+    code: 'VALIDATION_ERROR',
+    message: "Body is not valid JSON but content-type is set to 'application/json'",
+  });
+});
+
 test('POST /api/ai/price returns normalized suggested price and reasoning', async t => {
   const originalAiConfig = structuredClone(config.ai);
   config.ai = {
@@ -1138,6 +1164,52 @@ test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', asyn
         },
       ],
     },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
+});
+
+test('POST /api/ai/price returns VALIDATION_ERROR for malformed JSON', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/price',
+    headers: {
+      'content-type': 'application/json',
+    },
+    payload: invalidJsonPayload,
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
+});
+
+test('POST /api/ai/chat returns VALIDATION_ERROR for malformed JSON', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/chat',
+    headers: {
+      'content-type': 'application/json',
+    },
+    payload: invalidJsonPayload,
   });
 
   assert.equal(response.statusCode, 400);
