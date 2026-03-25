@@ -199,6 +199,53 @@ test('default CORS config uses explicit localhost dev origins instead of wildcar
   assert.equal(DEFAULT_DEV_CORS_ALLOWED_ORIGINS.includes('*'), false);
 });
 
+test('Swagger JSON exposes the documented frontend-facing routes', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/documentation/json',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type']?.includes('application/json'), true);
+
+  const body = response.json() as Record<string, unknown>;
+  const paths = body.paths as Record<string, unknown>;
+  const components = body.components as Record<string, unknown>;
+
+  assert.equal(body.openapi, '3.1.0');
+  assert.ok(paths['/items']);
+  assert.ok(paths['/items/{id}']);
+  assert.ok(paths['/api/ai/status']);
+  assert.ok(paths['/api/ai/description']);
+  assert.ok(paths['/api/ai/price']);
+  assert.ok(paths['/api/ai/chat']);
+  assert.ok((components.schemas as Record<string, unknown>).ApiErrorResponse);
+});
+
+test('Swagger UI serves the documentation page', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/documentation/',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type']?.includes('text/html'), true);
+  assert.equal(response.body.includes('Swagger UI'), true);
+  assert.equal(response.body.includes('./static/swagger-initializer.js'), true);
+});
+
 test('CORS allowlist returns headers for an explicitly allowed origin', async t => {
   const originalAllowedOrigins = [...config.cors.allowedOrigins];
   config.cors.allowedOrigins = ['http://localhost:5173'];
