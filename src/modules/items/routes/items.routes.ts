@@ -57,7 +57,7 @@ export const registerItemRoutes = (
     });
   });
 
-  fastify.put<ItemUpdateRequest>('/items/:id', request => {
+  fastify.patch<ItemUpdateRequest>('/items/:id', request => {
     const itemId = itemsService.parseItemId(request.params.id);
     const parsedData = ItemUpdateInSchema.parse(request.body ?? {}) as ItemUpdateIn;
 

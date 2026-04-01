@@ -240,6 +240,23 @@ test('Swagger JSON exposes the documented frontend-facing routes', async t => {
   assert.ok(paths['/api/ai/price']);
   assert.ok(paths['/api/ai/chat']);
   assert.ok((components.schemas as Record<string, unknown>).ApiErrorResponse);
+  assert.ok(
+    (
+      paths['/items/{id}'] as {
+        patch?: Record<string, unknown>;
+        put?: Record<string, unknown>;
+      }
+    ).patch,
+  );
+  assert.equal(
+    (
+      paths['/items/{id}'] as {
+        patch?: Record<string, unknown>;
+        put?: Record<string, unknown>;
+      }
+    ).put,
+    undefined,
+  );
 
   const aiDescriptionResponses = (
     paths['/api/ai/description'] as {
@@ -344,7 +361,7 @@ test('CORS allowlist returns headers for an explicitly allowed origin', async t 
     url: '/items/1',
     headers: {
       Origin: 'http://localhost:5173',
-      'Access-Control-Request-Method': 'PUT',
+      'Access-Control-Request-Method': 'PATCH',
       'Access-Control-Request-Headers': 'Content-Type, X-Trace-Id',
     },
   });
@@ -382,7 +399,7 @@ test('CORS allowlist skips headers for a disallowed origin', async t => {
     url: '/items/1',
     headers: {
       Origin: 'https://example.com',
-      'Access-Control-Request-Method': 'PUT',
+      'Access-Control-Request-Method': 'PATCH',
     },
   });
 
@@ -503,7 +520,7 @@ test('GET /items and GET /items/:id expose optional image fields when present', 
   assert.deepEqual(detailBody.images, imageListItem.images);
 });
 
-test('PUT /items/:id returns the stable success DTO', async t => {
+test('PATCH /items/:id returns the stable success DTO', async t => {
   const app = await buildApp();
 
   t.after(async () => {
@@ -511,7 +528,7 @@ test('PUT /items/:id returns the stable success DTO', async t => {
   });
 
   const response = await app.inject({
-    method: 'PUT',
+    method: 'PATCH',
     url: '/items/1',
     payload: {
       category: 'auto',

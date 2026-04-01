@@ -31,7 +31,7 @@ Backend для личного кабинета продавца и AI-функц
 
 - `GET /items` с backend-driven search, filtering, sorting и pagination
 - `GET /items/:id` с полным нормализованным item DTO
-- `PUT /items/:id` с полной валидацией payload'а
+- `PATCH /items/:id` с полной валидацией payload'а
 - `GET /api/ai/status` для явной проверки доступности AI
 - `POST /api/ai/description` для генерации или улучшения описания
 - `POST /api/ai/price` для нормализованной оценки цены
@@ -79,7 +79,7 @@ curl "http://localhost:8080/items?limit=5&sortColumn=createdAt&sortDirection=des
 Обновить объявление полным payload'ом:
 
 ```bash
-curl -X PUT http://localhost:8080/items/1 \
+curl -X PATCH http://localhost:8080/items/1 \
   -H "Content-Type: application/json" \
   -d '{
     "category": "auto",

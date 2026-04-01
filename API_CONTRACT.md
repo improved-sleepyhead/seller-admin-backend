@@ -1,6 +1,6 @@
 # Frontend API Contract
 
-Актуально для backend-состояния на 2026-03-25.
+Актуально для backend-состояния на 2026-04-01.
 
 Этот документ фиксирует фактический публичный контракт backend для frontend-команды. Он описывает только внешние request/response формы и не раскрывает внутренний формат OpenRouter.
 
@@ -8,7 +8,7 @@
 
 - `GET /items` возвращает объект `{ items, total }`.
 - `GET /items/:id` возвращает один объект объявления.
-- `PUT /items/:id` возвращает `{ success: true }` при успехе.
+- `PATCH /items/:id` возвращает `{ success: true }` при успехе.
 - Любая публичная ошибка возвращается в едином формате:
 
 ```json
@@ -43,7 +43,7 @@ type ItemReadDto = {
 Примечания:
 
 - `needsRevision` приходит как convenience field, но frontend не должен полагаться только на него и может вычислять своё состояние по исходным полям.
-- `params` зависит от `category`. В текущем dataset read-side `params` может быть неполным у старых записей. Для записи через `PUT /items/:id` backend, наоборот, требует полный category-specific payload.
+- `params` зависит от `category`. В текущем dataset read-side `params` может быть неполным у старых записей. Для записи через `PATCH /items/:id` backend, наоборот, требует полный category-specific payload.
 
 ## `GET /items`
 
@@ -183,7 +183,7 @@ GET /items/999999
 }
 ```
 
-## `PUT /items/:id`
+## `PATCH /items/:id`
 
 Полное обновление объявления. Частичные payload'ы не поддерживаются.
 
@@ -291,7 +291,7 @@ type ItemUpdateIn =
 
 ## AI Request Item
 
-Все AI endpoint'ы принимают `item` в том же shape, что и полный `PUT` payload по объявлению.
+Все AI endpoint'ы принимают `item` в том же shape, что и полный `PATCH` payload по объявлению.
 
 ## `POST /api/ai/description`
 

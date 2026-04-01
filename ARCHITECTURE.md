@@ -403,7 +403,7 @@ HTTP adapter'ы для:
 
 - `GET /items` возвращает `{ items, total }`;
 - `GET /items/:id` возвращает один объект;
-- `PUT /items/:id` возвращает `{ success: true }` при успехе;
+- `PATCH /items/:id` возвращает `{ success: true }` при успехе;
 - все ошибки возвращают `{ success: false, code, message, details? }`;
 - AI endpoint'ы возвращают backend-normalized ответы, а не raw OpenRouter payload'ы;
 - streaming chat отдаёт backend-owned SSE events, а не provider frame'ы.

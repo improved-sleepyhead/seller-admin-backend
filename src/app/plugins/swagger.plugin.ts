@@ -234,9 +234,9 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
           }),
         },
       },
-      put: {
+      patch: {
         tags: ['items'],
-        summary: 'Replace item',
+        summary: 'Update item',
         parameters: [
           {
             in: 'path',
