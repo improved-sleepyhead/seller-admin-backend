@@ -1,5 +1,9 @@
 import type { ItemsGetInQuery } from 'src/modules/items/contracts/items-query.contract.ts';
-import type { ItemUpdateIn } from 'src/modules/items/contracts/item-update.contract.ts';
+import {
+  ItemUpdateInSchema,
+  type ItemPatchIn,
+  type ItemUpdateIn,
+} from 'src/modules/items/contracts/item-update.contract.ts';
 import type { Item } from 'src/modules/items/domain/item.model.ts';
 import { doesItemNeedRevision } from 'src/modules/items/domain/item-revision.ts';
 import { notFoundError, validationError } from 'src/shared/errors/app-error.ts';
@@ -61,14 +65,32 @@ export const createItemsService = (itemsRepository: ItemsRepository) => ({
     };
   },
 
-  updateItem(itemId: number, parsedData: ItemUpdateIn): void {
+  updateItem(itemId: number, parsedData: ItemPatchIn): void {
     const existingItem = this.getItemById(itemId);
+    const nextCategory = parsedData.category ?? existingItem.category;
+    const nextParams =
+      parsedData.params === undefined
+        ? existingItem.params
+        : parsedData.category !== undefined &&
+            parsedData.category !== existingItem.category
+          ? parsedData.params
+          : { ...existingItem.params, ...parsedData.params };
+    const nextItemData = ItemUpdateInSchema.parse({
+      category: nextCategory,
+      title: parsedData.title === undefined ? existingItem.title : parsedData.title,
+      description:
+        parsedData.description === undefined
+          ? existingItem.description
+          : parsedData.description,
+      price: parsedData.price === undefined ? existingItem.price : parsedData.price,
+      params: nextParams,
+    }) as ItemUpdateIn;
 
     itemsRepository.replaceById(itemId, {
       id: existingItem.id,
       createdAt: existingItem.createdAt,
       updatedAt: new Date().toISOString(),
-      ...parsedData,
+      ...nextItemData,
     });
   },
 });
