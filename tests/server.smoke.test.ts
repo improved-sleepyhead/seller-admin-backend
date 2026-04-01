@@ -274,7 +274,7 @@ const fetchJson = async (
 };
 
 test(
-  'smoke/e2e covers item list, detail and full update via live HTTP',
+  'smoke/e2e covers item list, detail and full update via live HTTP PATCH',
   { concurrency: false },
   async t => {
     const { address, close } = await startAppServer();
@@ -315,7 +315,7 @@ test(
     };
 
     const updateResult = await fetchJson(`${address}/items/${detailBefore.id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -335,7 +335,7 @@ test(
 
     assert.equal(detailAfter.id, detailBefore.id);
     assert.equal(detailAfter.createdAt, detailBefore.createdAt);
-    assert.notEqual(detailAfter.updatedAt, originalUpdatedAt, 'updatedAt should change after full PUT');
+    assert.notEqual(detailAfter.updatedAt, originalUpdatedAt, 'updatedAt should change after full PATCH');
     assert.equal(detailAfter.title, updatePayload.title);
     assert.equal(detailAfter.description, updatePayload.description);
     assert.equal(detailAfter.price, updatePayload.price);
