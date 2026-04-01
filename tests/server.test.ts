@@ -616,6 +616,40 @@ test('PATCH /items/:id accepts partial payloads and merges nested params', async
   });
 });
 
+test(
+  'PATCH /items/:id accepts top-level partial updates for legacy items with incomplete params',
+  async t => {
+    const app = await buildApp();
+
+    t.after(async () => {
+      await app.close();
+    });
+
+    const legacyItemResponse = await app.inject({
+      method: 'GET',
+      url: '/items/6',
+    });
+
+    assert.equal(legacyItemResponse.statusCode, 200);
+
+    const legacyItem = ItemReadDtoSchema.parse(legacyItemResponse.json());
+
+    const patchResponse = await app.inject({
+      method: 'PATCH',
+      url: `/items/${legacyItem.id}`,
+      payload: {
+        title: legacyItem.title,
+      },
+    });
+
+    assert.equal(patchResponse.statusCode, 200);
+    assert.deepEqual(
+      ItemUpdateSuccessResponseSchema.parse(patchResponse.json()),
+      { success: true },
+    );
+  },
+);
+
 test('GET /api/ai/status returns a runtime-validatable response in disabled and enabled states', async t => {
   const originalAiConfig = structuredClone(config.ai);
 
