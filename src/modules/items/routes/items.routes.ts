@@ -5,8 +5,8 @@ import {
   type ItemsGetInQuery,
 } from '../contracts/items-query.contract.ts';
 import {
-  ItemUpdateInSchema,
-  type ItemUpdateIn,
+  ItemPatchInSchema,
+  type ItemPatchIn,
 } from '../contracts/item-update.contract.ts';
 import {
   ItemUpdateSuccessResponseSchema,
@@ -59,7 +59,7 @@ export const registerItemRoutes = (
 
   fastify.patch<ItemUpdateRequest>('/items/:id', request => {
     const itemId = itemsService.parseItemId(request.params.id);
-    const parsedData = ItemUpdateInSchema.parse(request.body ?? {}) as ItemUpdateIn;
+    const parsedData = ItemPatchInSchema.parse(request.body ?? {}) as ItemPatchIn;
 
     itemsService.updateItem(itemId, parsedData);
 

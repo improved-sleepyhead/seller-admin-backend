@@ -553,6 +553,69 @@ test('PATCH /items/:id returns the stable success DTO', async t => {
   );
 });
 
+test('PATCH /items/:id accepts partial payloads and merges nested params', async t => {
+  const app = await buildApp();
+
+  const originalResponse = await app.inject({
+    method: 'GET',
+    url: '/items/1',
+  });
+
+  assert.equal(originalResponse.statusCode, 200);
+
+  const originalItem = structuredClone(ItemReadDtoSchema.parse(originalResponse.json()));
+
+  t.after(async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: `/items/${originalItem.id}`,
+      payload: {
+        category: originalItem.category,
+        title: originalItem.title,
+        description: originalItem.description,
+        price: originalItem.price,
+        params: originalItem.params,
+      },
+    });
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'PATCH',
+    url: `/items/${originalItem.id}`,
+    payload: {
+      title: `${originalItem.title} partial`,
+      params: {
+        mileage: 123456,
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(
+    ItemUpdateSuccessResponseSchema.parse(response.json()),
+    { success: true },
+  );
+
+  const updatedResponse = await app.inject({
+    method: 'GET',
+    url: `/items/${originalItem.id}`,
+  });
+
+  assert.equal(updatedResponse.statusCode, 200);
+
+  const updatedItem = ItemReadDtoSchema.parse(updatedResponse.json());
+
+  assert.equal(updatedItem.category, originalItem.category);
+  assert.equal(updatedItem.title, `${originalItem.title} partial`);
+  assert.equal(updatedItem.description, originalItem.description);
+  assert.equal(updatedItem.price, originalItem.price);
+  assert.deepEqual(updatedItem.params, {
+    ...originalItem.params,
+    mileage: 123456,
+  });
+});
+
 test('GET /api/ai/status returns a runtime-validatable response in disabled and enabled states', async t => {
   const originalAiConfig = structuredClone(config.ai);
 

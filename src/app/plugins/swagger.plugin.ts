@@ -18,7 +18,10 @@ import {
   ItemsResponseSchema,
   ItemUpdateSuccessResponseSchema,
 } from 'src/modules/items/contracts/item-response.contract.ts';
-import { ItemUpdateInSchema } from 'src/modules/items/contracts/item-update.contract.ts';
+import {
+  ItemPatchInSchema,
+  ItemUpdateInSchema,
+} from 'src/modules/items/contracts/item-update.contract.ts';
 import { ApiErrorResponseSchema } from 'src/shared/contracts/api-error.contract.ts';
 
 type JsonSchema = Record<string, unknown>;
@@ -100,6 +103,7 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
       ApiErrorResponse: toOpenApiSchema(ApiErrorResponseSchema),
       ItemReadDto: toOpenApiSchema(ItemReadDtoSchema),
       ItemsResponse: toOpenApiSchema(ItemsResponseSchema),
+      ItemPatchIn: toOpenApiSchema(ItemPatchInSchema),
       ItemUpdateIn: toOpenApiSchema(ItemUpdateInSchema),
       ItemUpdateSuccessResponse: toOpenApiSchema(ItemUpdateSuccessResponseSchema),
       AiStatusResponse: toOpenApiSchema(AiStatusResponseSchema),
@@ -253,7 +257,7 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
           required: true,
           content: {
             'application/json': {
-              schema: createSchemaRef('ItemUpdateIn'),
+              schema: createSchemaRef('ItemPatchIn'),
             },
           },
         },
