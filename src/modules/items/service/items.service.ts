@@ -1,14 +1,36 @@
 import type { ItemsGetInQuery } from 'src/modules/items/contracts/items-query.contract.ts';
 import {
-  ItemUpdateInSchema,
+  AutoItemParamsSchema,
+  ElectronicsEstateItemParamsSchema,
+  RealEstateItemParamsSchema,
   type ItemPatchIn,
-  type ItemUpdateIn,
 } from 'src/modules/items/contracts/item-update.contract.ts';
 import type { Item } from 'src/modules/items/domain/item.model.ts';
 import { doesItemNeedRevision } from 'src/modules/items/domain/item-revision.ts';
 import { notFoundError, validationError } from 'src/shared/errors/app-error.ts';
 
 import type { ItemsRepository } from '../repository/items.repository.ts';
+
+const getCategoryParamsSchemas = (category: Item['category']) => {
+  if (category === 'auto') {
+    return {
+      full: AutoItemParamsSchema,
+      partial: AutoItemParamsSchema.partial(),
+    };
+  }
+
+  if (category === 'real_estate') {
+    return {
+      full: RealEstateItemParamsSchema,
+      partial: RealEstateItemParamsSchema.partial(),
+    };
+  }
+
+  return {
+    full: ElectronicsEstateItemParamsSchema,
+    partial: ElectronicsEstateItemParamsSchema.partial(),
+  };
+};
 
 export const createItemsService = (itemsRepository: ItemsRepository) => ({
   parseItemId(rawItemId: string): number {
@@ -68,14 +90,32 @@ export const createItemsService = (itemsRepository: ItemsRepository) => ({
   updateItem(itemId: number, parsedData: ItemPatchIn): void {
     const existingItem = this.getItemById(itemId);
     const nextCategory = parsedData.category ?? existingItem.category;
-    const nextParams =
+    const categoryChanged =
+      parsedData.category !== undefined && parsedData.category !== existingItem.category;
+
+    if (categoryChanged && parsedData.params === undefined) {
+      throw validationError(
+        'params should be provided as a full category-specific payload when category changes.',
+      );
+    }
+
+    const nextCategoryParamsSchemas = getCategoryParamsSchemas(nextCategory);
+    const validatedPatchParams =
       parsedData.params === undefined
+        ? undefined
+        : categoryChanged
+          ? nextCategoryParamsSchemas.full.parse(parsedData.params)
+          : nextCategoryParamsSchemas.partial.parse(parsedData.params);
+    const nextParams =
+      validatedPatchParams === undefined
         ? existingItem.params
-        : parsedData.category !== undefined &&
-            parsedData.category !== existingItem.category
-          ? parsedData.params
-          : { ...existingItem.params, ...parsedData.params };
-    const nextItemData = ItemUpdateInSchema.parse({
+        : categoryChanged
+          ? validatedPatchParams
+          : { ...existingItem.params, ...validatedPatchParams };
+    const nextItem: Item = {
+      id: existingItem.id,
+      createdAt: existingItem.createdAt,
+      updatedAt: new Date().toISOString(),
       category: nextCategory,
       title: parsedData.title === undefined ? existingItem.title : parsedData.title,
       description:
@@ -84,14 +124,9 @@ export const createItemsService = (itemsRepository: ItemsRepository) => ({
           : parsedData.description,
       price: parsedData.price === undefined ? existingItem.price : parsedData.price,
       params: nextParams,
-    }) as ItemUpdateIn;
+    };
 
-    itemsRepository.replaceById(itemId, {
-      id: existingItem.id,
-      createdAt: existingItem.createdAt,
-      updatedAt: new Date().toISOString(),
-      ...nextItemData,
-    });
+    itemsRepository.replaceById(itemId, nextItem);
   },
 });
 
