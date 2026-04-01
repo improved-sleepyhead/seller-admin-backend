@@ -71,6 +71,26 @@ export const ItemUpdateInSchema = z
     ]),
   );
 
+const ItemPatchParamsSchema = z.union([
+  AutoItemParamsSchema.partial(),
+  RealEstateItemParamsSchema.partial(),
+  ElectronicsEstateItemParamsSchema.partial(),
+]);
+
+export const ItemPatchInSchema = z
+  .strictObject({
+    category: CategorySchema.optional(),
+    title: NonEmptyTitleSchema.optional(),
+    description: OptionalDescriptionSchema,
+    price: z.number().min(0).optional(),
+    params: ItemPatchParamsSchema.optional(),
+  })
+  .refine(
+    patch => Object.values(patch).some(value => value !== undefined),
+    'At least one field should be provided for PATCH /items/:id.',
+  );
+
 export const AiItemInputSchema = ItemUpdateInSchema;
 
 export type ItemUpdateIn = z.infer<typeof ItemUpdateInSchema>;
+export type ItemPatchIn = z.infer<typeof ItemPatchInSchema>;

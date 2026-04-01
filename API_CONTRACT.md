@@ -185,49 +185,54 @@ GET /items/999999
 
 ## `PATCH /items/:id`
 
-Полное обновление объявления. Частичные payload'ы не поддерживаются.
+Частичное обновление объявления. Можно передавать только изменившиеся поля.
+
+Если `category` не меняется, backend мерджит присланный `params` с текущим `params`,
+а затем валидирует итоговый объект целиком.
+
+Если `category` меняется, нужно прислать полный `params` уже для новой категории.
 
 ### Request body
 
 ```ts
-type ItemUpdateIn =
+type ItemPatchIn =
   | {
-      category: 'auto';
-      title: string;
+      category?: 'auto';
+      title?: string;
       description?: string;
-      price: number;
-      params: {
-        brand: string;
-        model: string;
-        yearOfManufacture: number;
-        transmission: 'automatic' | 'manual';
-        mileage: number;
-        enginePower: number;
+      price?: number;
+      params?: {
+        brand?: string;
+        model?: string;
+        yearOfManufacture?: number;
+        transmission?: 'automatic' | 'manual';
+        mileage?: number;
+        enginePower?: number;
       };
     }
   | {
-      category: 'real_estate';
-      title: string;
+      category?: 'real_estate';
+      title?: string;
       description?: string;
-      price: number;
-      params: {
-        type: 'flat' | 'house' | 'room';
-        address: string;
-        area: number;
-        floor: number;
+      price?: number;
+      params?: {
+        type?: 'flat' | 'house' | 'room';
+        address?: string;
+        area?: number;
+        floor?: number;
       };
     }
   | {
-      category: 'electronics';
-      title: string;
+      category?: 'electronics';
+      title?: string;
       description?: string;
-      price: number;
-      params: {
-        type: 'phone' | 'laptop' | 'misc';
-        brand: string;
-        model: string;
-        condition: 'new' | 'used';
-        color: string;
+      price?: number;
+      params?: {
+        type?: 'phone' | 'laptop' | 'misc';
+        brand?: string;
+        model?: string;
+        condition?: 'new' | 'used';
+        color?: string;
       };
     };
 ```
