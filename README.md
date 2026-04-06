@@ -35,7 +35,7 @@ Backend для личного кабинета продавца и AI-функц
 - `GET /api/ai/status` для явной проверки доступности AI
 - `POST /api/ai/description` для генерации или улучшения описания
 - `POST /api/ai/price` для нормализованной оценки цены
-- `POST /api/ai/chat` с JSON-ответом и SSE streaming mode
+- `POST /api/ai/chat` с Vercel AI SDK-compatible UI message stream для `useChat` / `DefaultChatTransport`
 - Swagger UI по пути `/documentation`
 
 ## Быстрый старт локально

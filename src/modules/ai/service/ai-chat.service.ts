@@ -58,27 +58,6 @@ export type AiChatResponse = {
   usage?: OpenRouterUsage;
 };
 
-export type AiChatStreamEvent =
-  | {
-      event: 'meta';
-      data: {
-        model: string;
-      };
-    }
-  | {
-      event: 'chunk';
-      data: {
-        content: string;
-      };
-    }
-  | {
-      event: 'done';
-      data: {
-        model?: string;
-        usage?: OpenRouterUsage;
-      };
-    };
-
 export const normalizeChatMessage = (
   value: string,
 ): AiChatResponse['message'] => {
@@ -155,13 +134,20 @@ export const streamChatResponse = async (
     item,
     messages,
     userMessage,
-    onEvent,
+    onResponseStart,
+    onTextDelta,
     signal,
   }: {
     item: AiPromptItem;
     messages: AiChatHistoryMessage[];
     userMessage: string;
-    onEvent: (event: AiChatStreamEvent) => void | Promise<void>;
+    onResponseStart?: (
+      metadata: {
+        id: string;
+        model: string;
+      },
+    ) => void | Promise<void>;
+    onTextDelta: (delta: string) => void | Promise<void>;
     signal?: AbortSignal;
   },
 ): Promise<OpenRouterTextCompletionStreamResult> => {
@@ -179,14 +165,7 @@ export const streamChatResponse = async (
       maxTokens: INPUT_LIMITS.ai.completionMaxTokens.chat,
     },
     {
-      onResponseStart: async ({ model }) => {
-        await onEvent({
-          event: 'meta',
-          data: {
-            model,
-          },
-        });
-      },
+      onResponseStart,
       onTextDelta: async delta => {
         totalContentLength += delta.length;
 
@@ -194,23 +173,14 @@ export const streamChatResponse = async (
           throw aiProviderError(AI_PROVIDER_ERROR_MESSAGE);
         }
 
-        await onEvent({
-          event: 'chunk',
-          data: {
-            content: delta,
-          },
-        });
+        await onTextDelta(delta);
       },
     },
   );
 
-  await onEvent({
-    event: 'done',
-    data: {
-      model: completion.model,
-      ...(completion.usage ? { usage: completion.usage } : {}),
-    },
-  });
+  if (totalContentLength < 1) {
+    throw aiProviderError(AI_PROVIDER_ERROR_MESSAGE);
+  }
 
   return completion;
 };

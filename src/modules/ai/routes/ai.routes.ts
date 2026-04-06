@@ -1,27 +1,26 @@
+import {
+  UI_MESSAGE_STREAM_HEADERS,
+  createUIMessageStream,
+  pipeUIMessageStreamToResponse,
+} from 'ai';
 import type { FastifyInstance } from 'fastify';
 
 import { createClientAbortHandle } from 'src/app/http/abort-on-disconnect.ts';
-import {
-  requestAcceptsEventStream,
-  SSE_CONTENT_TYPE,
-  writeSseEvent,
-} from 'src/app/http/sse.ts';
 import { toApiErrorResponse } from 'src/shared/errors/api-error.mapper.ts';
 import { logApiErrorResponse } from 'src/shared/logging/logger.ts';
 
-import { AiChatRequestSchema } from '../contracts/ai-request.contract.ts';
 import {
-  AiChatResponseSchema,
   AiDescriptionResponseSchema,
   AiPriceResponseSchema,
   AiStatusResponseSchema,
 } from '../contracts/ai-response.contract.ts';
 import { AiDescriptionRequestSchema, AiPriceRequestSchema } from '../contracts/ai-request.contract.ts';
-import { generateChatResponse, streamChatResponse } from '../service/ai-chat.service.ts';
+import { streamChatResponse } from '../service/ai-chat.service.ts';
 import { generateDescriptionSuggestion } from '../service/ai-description.service.ts';
 import { generatePriceSuggestion } from '../service/ai-price.service.ts';
 import { getAiStatusResponse } from '../service/ai-status.service.ts';
 import type { OpenRouterClient } from '../providers/openrouter/openrouter.types.ts';
+import { normalizeAiChatRequest } from './ai-chat-ui-stream.ts';
 
 export const registerAiRoutes = (
   fastify: FastifyInstance,
@@ -62,57 +61,84 @@ export const registerAiRoutes = (
   });
 
   fastify.post('/api/ai/chat', async (request, reply) => {
-    const { item, messages, userMessage } = AiChatRequestSchema.parse(
-      request.body ?? {},
-    );
-
-    if (!requestAcceptsEventStream(request.headers.accept)) {
-      const abortHandle = createClientAbortHandle(request, reply);
-
-      try {
-        return AiChatResponseSchema.parse(
-          await generateChatResponse(openRouterClient, {
-            item,
-            messages,
-            userMessage,
-            signal: abortHandle.signal,
-          }),
-        );
-      } finally {
-        abortHandle.cleanup();
-      }
-    }
+    const { item, originalMessages, history, userMessage } =
+      await normalizeAiChatRequest(request.body ?? {});
 
     openRouterClient.assertAvailable();
     const abortHandle = createClientAbortHandle(request, reply);
 
     reply.hijack();
-    reply.raw.statusCode = 200;
-    reply.raw.setHeader('Content-Type', SSE_CONTENT_TYPE);
-    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-    reply.raw.setHeader('Connection', 'keep-alive');
-    reply.raw.setHeader('X-Accel-Buffering', 'no');
-    reply.raw.flushHeaders?.();
 
-    try {
-      await streamChatResponse(openRouterClient, {
-        item,
-        messages,
-        userMessage,
-        signal: abortHandle.signal,
-        onEvent: event => writeSseEvent(reply, event.event, event.data),
-      });
-    } catch (error) {
-      const response = toApiErrorResponse(error);
+    const stream = createUIMessageStream({
+      originalMessages,
+      onError: error => {
+        const response = toApiErrorResponse(error);
 
-      logApiErrorResponse(request, response, error);
-      writeSseEvent(reply, 'error', response.body);
-    } finally {
-      abortHandle.cleanup();
+        logApiErrorResponse(request, response, error);
 
-      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-        reply.raw.end();
-      }
-    }
+        return response.body.message;
+      },
+      async execute({ writer }) {
+        let textPartId: string | undefined;
+        let textStarted = false;
+
+        try {
+          await streamChatResponse(openRouterClient, {
+            item,
+            messages: history,
+            userMessage,
+            signal: abortHandle.signal,
+            onTextDelta: async delta => {
+              if (!delta.length) {
+                return;
+              }
+
+              textPartId ??= crypto.randomUUID();
+
+              if (!textStarted) {
+                writer.write({
+                  type: 'text-start',
+                  id: textPartId,
+                });
+                textStarted = true;
+              }
+
+              writer.write({
+                type: 'text-delta',
+                id: textPartId,
+                delta,
+              });
+            },
+          });
+
+          if (textPartId) {
+            writer.write({
+              type: 'text-end',
+              id: textPartId,
+            });
+          }
+        } catch (error) {
+          if (abortHandle.signal.aborted) {
+            return;
+          }
+
+          throw error;
+        } finally {
+          abortHandle.cleanup();
+        }
+      },
+    });
+
+    pipeUIMessageStreamToResponse({
+      response: reply.raw,
+      stream,
+      status: 200,
+      headers: {
+        ...UI_MESSAGE_STREAM_HEADERS,
+        'cache-control': 'no-cache, no-transform',
+      },
+    });
+
+    return reply;
   });
 };
