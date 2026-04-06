@@ -247,8 +247,7 @@ type AiUsage = {
 
 - `title`: до `160` символов
 - `description`: до `5000` символов
-- `userMessage`: до `2000` символов
-- одно сообщение в `messages`: до `2000` символов
+- один `text` part, который backend использует как chat turn: до `2000` символов
 - максимум элементов в `messages`: `20`
 
 Если лимиты нарушены, backend вернёт `400 VALIDATION_ERROR`.
@@ -633,7 +632,7 @@ type AiPriceResponse = {
 
 ## 5.7 `POST /api/ai/chat`
 
-Поддерживает два режима: обычный JSON и streaming через SSE.
+Предназначен для AI SDK UI transport. Успешный ответ стримится в формате, который `useChat` и `DefaultChatTransport` понимают из коробки.
 
 ### Request body
 
@@ -641,143 +640,78 @@ type AiPriceResponse = {
 type AiChatRequest = {
   item: ItemUpdateIn;
   messages: Array<{
-    role: 'user' | 'assistant';
-    content: string;
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    metadata?: unknown;
+    parts: Array<{
+      type: string;
+      text?: string;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
   }>;
-  userMessage: string;
+  id?: string;
+  messageId?: string;
+  trigger?: string;
 };
 ```
 
-### Режим 1. JSON response
+### Что backend делает с `messages`
 
-Если `Accept` не содержит `text/event-stream`, backend возвращает обычный JSON.
+Backend:
 
-#### Success response
+- берёт последний `user` message с непустым `text` part как текущий вопрос;
+- все предыдущие завершённые `user`/`assistant` text messages использует как history;
+- `system`, `reasoning`, `data-*` и metadata-only parts игнорирует;
+- возвращает `400 VALIDATION_ERROR`, если последнего валидного `user` text message нет.
 
-```ts
-type AiChatResponse = {
-  message: {
-    role: 'assistant';
-    content: string;
-  };
-  model?: string;
-  usage?: AiUsage;
-};
-```
+Для frontend это значит:
 
-#### Пример ответа
+- не нужно отдельно собирать `userMessage`;
+- не нужен custom payload adapter для split `messages + userMessage`;
+- достаточно передавать обычные `UIMessage[]` из AI SDK.
 
-```json
-{
-  "message": {
-    "role": "assistant",
-    "content": "Можно подчеркнуть аккуратное состояние, прозрачную историю использования и готовность показать устройство при встрече."
-  },
-  "model": "openrouter/test-model",
-  "usage": {
-    "inputTokens": 101,
-    "outputTokens": 37,
-    "totalTokens": 138
-  }
-}
-```
+### Success response
 
-### Режим 2. SSE streaming
+Успешный ответ:
 
-Если клиент отправляет:
+- `Content-Type: text/event-stream`
+- `x-vercel-ai-ui-message-stream: v1`
 
-```http
-Accept: text/event-stream
-```
-
-backend отвечает project-owned SSE-контрактом.
-
-#### Поддерживаемые события
-
-```ts
-type AiChatStreamEvent =
-  | {
-      event: 'meta';
-      data: {
-        model: string;
-      };
-    }
-  | {
-      event: 'chunk';
-      data: {
-        content: string;
-      };
-    }
-  | {
-      event: 'done';
-      data: {
-        model?: string;
-        usage?: AiUsage;
-      };
-    }
-  | {
-      event: 'error';
-      data: ApiErrorResponse;
-    };
-```
-
-#### Пример SSE-потока
+#### Пример stream
 
 ```text
-event: meta
-data: {"model":"openrouter/test-model"}
+data: {"type":"start","messageId":"assistant-1"}
 
-event: chunk
-data: {"content":"Можно "}
+data: {"type":"text-start","id":"text-1"}
 
-event: chunk
-data: {"content":"подчеркнуть аккуратное состояние."}
+data: {"type":"text-delta","id":"text-1","delta":"Можно "}
 
-event: done
-data: {"model":"openrouter/test-model","usage":{"inputTokens":101,"outputTokens":37,"totalTokens":138}}
+data: {"type":"text-delta","id":"text-1","delta":"подчеркнуть аккуратное состояние."}
+
+data: {"type":"text-end","id":"text-1"}
+
+data: [DONE]
 ```
 
-#### Пример чтения потока через `fetch`
+#### Рекомендуемое использование на frontend
 
 ```ts
-const response = await fetch('/api/ai/chat', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-  },
-  body: JSON.stringify({
+const transport = new DefaultChatTransport({
+  api: '/api/ai/chat',
+  body: () => ({
     item,
-    messages,
-    userMessage,
   }),
 });
 
-const reader = response.body?.getReader();
-const decoder = new TextDecoder();
-let raw = '';
-
-while (reader) {
-  const { value, done } = await reader.read();
-  if (done) break;
-
-  raw += decoder.decode(value, { stream: true });
-  // дальше поток разбирается по event/data блокам SSE
-}
+const chat = useChat({ transport });
 ```
-
-#### Как собирать итоговый ответ на frontend
-
-- создайте пустую строку;
-- на каждое событие `chunk` дописывайте `data.content`;
-- `meta` используйте для отображения модели, если нужно;
-- `done` считайте признаком успешного завершения;
-- `error` считайте нормализованной backend-ошибкой и завершайте поток с ошибкой.
 
 #### Что backend не делает
 
 - не отдаёт `choices`, `delta`, `provider id` и другие OpenRouter-specific поля;
-- не требует от frontend разбирать provider transport layer.
+- не требует от frontend разбирать provider transport layer;
+- не требует от frontend вручную парсить SSE.
 
 ### Возможные ошибки
 

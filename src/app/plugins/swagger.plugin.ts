@@ -28,9 +28,122 @@ type JsonSchema = Record<string, unknown>;
 
 const DOCUMENTATION_ROUTE_PREFIX = '/documentation';
 
+const AI_CHAT_REQUEST_EXAMPLE = {
+  item: {
+    category: 'auto',
+    title: 'Mitsubishi Lancer',
+    description: 'Ухоженный автомобиль, прозрачная история обслуживания.',
+    price: 850000,
+    params: {
+      brand: 'Mitsubishi',
+      model: 'Lancer',
+      yearOfManufacture: 2018,
+      transmission: 'automatic',
+      mileage: 65000,
+      enginePower: 117,
+    },
+  },
+  messages: [
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'text',
+          text: 'Здравствуйте. Что для вас важно уточнить?',
+        },
+      ],
+    },
+    {
+      id: 'user-1',
+      role: 'user',
+      parts: [
+        {
+          type: 'text',
+          text: 'Подскажи, как кратко ответить покупателю про состояние машины?',
+        },
+      ],
+    },
+  ],
+  id: 'chat-1',
+  trigger: 'submit-message',
+} as const;
+
 const createSchemaRef = (schemaName: string) => ({
   $ref: `#/components/schemas/${schemaName}`,
 });
+
+const AI_CHAT_REQUEST_SCHEMA: JsonSchema = {
+  type: 'object',
+  required: ['item', 'messages'],
+  additionalProperties: true,
+  properties: {
+    item: createSchemaRef('ItemUpdateIn'),
+    messages: {
+      type: 'array',
+      maxItems: 20,
+      items: {
+        type: 'object',
+        required: ['id', 'role', 'parts'],
+        additionalProperties: true,
+        properties: {
+          id: {
+            type: 'string',
+            minLength: 1,
+          },
+          role: {
+            type: 'string',
+            enum: ['assistant', 'user', 'system'],
+          },
+          metadata: {
+            description:
+              'Optional AI SDK message metadata. Backend does not require it.',
+          },
+          parts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['type'],
+              additionalProperties: true,
+              properties: {
+                type: {
+                  type: 'string',
+                  description:
+                    'Use `text` parts for frontend chat turns. Other AI SDK parts are tolerated but ignored for history extraction.',
+                  example: 'text',
+                },
+                text: {
+                  type: 'string',
+                  description:
+                    'Text content for `type=text` parts. Backend extracts only text parts from user/assistant messages.',
+                  example:
+                    'Подскажи, как кратко ответить покупателю про состояние машины?',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    id: {
+      type: 'string',
+      description: 'Optional chat id from AI SDK transport.',
+      example: 'chat-1',
+    },
+    messageId: {
+      type: 'string',
+      description:
+        'Optional AI SDK message id used for regenerate-message flows.',
+      example: 'assistant-1',
+    },
+    trigger: {
+      type: 'string',
+      description: 'Optional AI SDK transport trigger.',
+      example: 'submit-message',
+    },
+  },
+  example: AI_CHAT_REQUEST_EXAMPLE,
+};
 
 const toOpenApiSchema = (schema: z.ZodType): JsonSchema => {
   const jsonSchema = z.toJSONSchema(schema) as JsonSchema;
@@ -111,7 +224,7 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
       AiDescriptionResponse: toOpenApiSchema(AiDescriptionResponseSchema),
       AiPriceRequest: toOpenApiSchema(AiPriceRequestSchema),
       AiPriceResponse: toOpenApiSchema(AiPriceResponseSchema),
-      AiChatRequest: toOpenApiSchema(AiChatRequestSchema),
+      AiChatRequest: AI_CHAT_REQUEST_SCHEMA,
       AiChatResponse: toOpenApiSchema(AiChatResponseSchema),
     },
   },
@@ -372,6 +485,7 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
           content: {
             'application/json': {
               schema: createSchemaRef('AiChatRequest'),
+              example: AI_CHAT_REQUEST_EXAMPLE,
             },
           },
         },
@@ -392,8 +506,6 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
                   'data: {"type":"text-delta","id":"text-1","delta":"Привет"}',
                   '',
                   'data: {"type":"text-end","id":"text-1"}',
-                  '',
-                  'data: {"type":"finish","finishReason":"stop"}',
                   '',
                   'data: [DONE]',
                 ].join('\n'),

@@ -359,9 +359,9 @@ type ItemPatchIn =
 
 ## `POST /api/ai/chat`
 
-Поддерживает два публичных режима.
+Успешный ответ всегда стримится в формате Vercel AI SDK UI message stream protocol.
 
-### Non-streaming JSON
+### Request
 
 Запрос:
 
@@ -383,59 +383,76 @@ type ItemPatchIn =
   },
   "messages": [
     {
+      "id": "assistant-1",
+      "role": "assistant",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Здравствуйте. Что для вас важно уточнить?"
+        }
+      ]
+    },
+    {
+      "id": "user-1",
       "role": "user",
-      "content": "Есть ли торг?"
+      "parts": [
+        {
+          "type": "text",
+          "text": "Что выделить в объявлении?"
+        }
+      ]
     }
   ],
-  "userMessage": "Что выделить в объявлении?"
+  "id": "chat-1",
+  "trigger": "submit-message"
 }
 ```
+
+Правила:
+
+- backend сам извлекает последний `user` `text` part как текущий запрос;
+- history строится только из `user`/`assistant` text parts;
+- transport-поля AI SDK (`id`, `messageId`, `trigger`) допускаются и не должны ломать валидацию;
+- отдельное поле `userMessage` больше не требуется для frontend AI SDK path.
+
+### Success stream
 
 Успешный ответ:
 
-```json
-{
-  "message": {
-    "role": "assistant",
-    "content": "Спрос на эту модель высокий."
-  },
-  "model": "test-model",
-  "usage": {
-    "inputTokens": 100,
-    "outputTokens": 20,
-    "totalTokens": 120
-  }
-}
-```
-
-### Streaming SSE
-
-Если клиент отправляет `Accept: text/event-stream`, backend переходит на project-owned SSE-контракт.
-
-Поддерживаемые события:
-
-- `meta`
-- `chunk`
-- `done`
-- `error`
+- `Content-Type: text/event-stream`
+- `x-vercel-ai-ui-message-stream: v1`
 
 Пример потока:
 
 ```text
-event: meta
-data: {"model":"test-model"}
+data: {"type":"start","messageId":"assistant-1"}
 
-event: chunk
-data: {"content":"Привет"}
+data: {"type":"text-start","id":"text-1"}
 
-event: chunk
-data: {"content":" мир"}
+data: {"type":"text-delta","id":"text-1","delta":"Привет"}
 
-event: done
-data: {"model":"test-model","usage":{"inputTokens":10,"outputTokens":2,"totalTokens":12}}
+data: {"type":"text-delta","id":"text-1","delta":" мир"}
+
+data: {"type":"text-end","id":"text-1"}
+
+data: [DONE]
 ```
 
-Provider-specific поля вроде `choices`, `delta` и raw provider `id` не являются частью публичного SSE-контракта.
+Provider-specific поля вроде `choices`, `delta` и raw provider `id` не являются частью публичного streaming-контракта.
+
+### Error response
+
+Если запрос невалиден или AI недоступен до открытия stream, backend по-прежнему отвечает обычным JSON error DTO:
+
+```json
+{
+  "success": false,
+  "code": "VALIDATION_ERROR",
+  "message": "Request validation failed."
+}
+```
+
+Во время уже открытого stream backend использует AI SDK-native error chunk вместо project-owned `event: error`.
 
 ## AI Error Examples
 
