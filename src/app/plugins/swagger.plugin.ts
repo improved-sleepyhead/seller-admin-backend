@@ -366,7 +366,7 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
         tags: ['ai'],
         summary: 'Generate AI chat reply',
         description:
-          'Returns JSON by default or server-sent events when the request Accept header includes `text/event-stream`.',
+          'Returns a Vercel AI SDK UI message stream for `useChat` and `DefaultChatTransport`.',
         requestBody: {
           required: true,
           content: {
@@ -377,24 +377,25 @@ const createSwaggerDocument = (): Record<string, unknown> => ({
         },
         responses: {
           200: {
-            description: 'Normalized chat reply or SSE event stream.',
+            description:
+              'AI SDK UI message stream over SSE with `x-vercel-ai-ui-message-stream: v1`.',
             content: {
-              'application/json': {
-                schema: createSchemaRef('AiChatResponse'),
-              },
               'text/event-stream': {
                 schema: {
                   type: 'string',
                 },
                 example: [
-                  'event: meta',
-                  'data: {"model":"openrouter/test-model"}',
+                  'data: {"type":"start","messageId":"assistant-1"}',
                   '',
-                  'event: chunk',
-                  'data: {"content":"Привет"}',
+                  'data: {"type":"text-start","id":"text-1"}',
                   '',
-                  'event: done',
-                  'data: {"model":"openrouter/test-model"}',
+                  'data: {"type":"text-delta","id":"text-1","delta":"Привет"}',
+                  '',
+                  'data: {"type":"text-end","id":"text-1"}',
+                  '',
+                  'data: {"type":"finish","finishReason":"stop"}',
+                  '',
+                  'data: [DONE]',
                 ].join('\n'),
               },
             },
