@@ -8,7 +8,6 @@ import {
   config,
 } from 'src/shared/config/app-config.ts';
 import {
-  AiChatResponseSchema,
   AiDescriptionResponseSchema,
   AiPriceResponseSchema,
   AiStatusResponseSchema,
@@ -30,6 +29,62 @@ const APP_HOST = '127.0.0.1';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const readResponseStream = async (response: Response): Promise<string> => {
+  const reader = response.body?.getReader();
+
+  assert.ok(reader);
+
+  const decoder = new TextDecoder();
+  let body = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    body += decoder.decode(value, { stream: true });
+  }
+
+  body += decoder.decode();
+
+  return body;
+};
+
+const parseSseDataFrames = (rawBody: string): unknown[] =>
+  rawBody
+    .split('\n\n')
+    .map(frame => frame.trim())
+    .filter(Boolean)
+    .map(frame => {
+      let data = '';
+
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('data:')) {
+          data += `${data ? '\n' : ''}${line.slice('data:'.length).trimStart()}`;
+        }
+      }
+
+      if (!data) {
+        return undefined;
+      }
+
+      return data === '[DONE]' ? data : (JSON.parse(data) as unknown);
+    })
+    .filter(frame => frame !== undefined);
+
+const getUiMessageChunks = (
+  frames: unknown[],
+): Array<Record<string, unknown> & { type: string }> =>
+  frames.filter(
+    (
+      frame,
+    ): frame is Record<string, unknown> & {
+      type: string;
+    } => isRecord(frame) && typeof frame.type === 'string',
+  );
 
 const readJsonRequestBody = async (
   request: IncomingMessage,
@@ -85,12 +140,6 @@ const startMockOpenRouterServer = async (): Promise<{
     const responseSchemaName =
       typeof jsonSchema?.name === 'string' ? jsonSchema.name : undefined;
 
-    if (body.stream === true) {
-      response.statusCode = 400;
-      response.end();
-      return;
-    }
-
     if (responseSchemaName === 'ai_description_response') {
       sendJson(response, 200, {
         id: 'smoke-description',
@@ -138,29 +187,16 @@ const startMockOpenRouterServer = async (): Promise<{
       return;
     }
 
-    if (responseSchemaName === 'ai_chat_response') {
-      sendJson(response, 200, {
-        id: 'smoke-chat',
-        model: 'openrouter/test-model',
-        usage: {
-          prompt_tokens: 22,
-          completion_tokens: 11,
-          total_tokens: 33,
-        },
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                message: {
-                  role: 'assistant',
-                  content:
-                    'Smoke-ответ: состояние аккуратное, историю можно описать как прозрачную и понятную.',
-                },
-              }),
-            },
-          },
-        ],
-      });
+    if (body.stream === true) {
+      response.statusCode = 200;
+      response.setHeader('Content-Type', 'text/event-stream');
+      response.write(
+        'data: {"id":"smoke-chat","model":"openrouter/test-model","choices":[{"delta":{"content":"Smoke-ответ: состояние аккуратное, "}}]}\n\n',
+      );
+      response.write(
+        'data: {"id":"smoke-chat","model":"openrouter/test-model","choices":[{"delta":{"content":"историю можно описать как прозрачную и понятную."}}],"usage":{"prompt_tokens":22,"completion_tokens":11,"total_tokens":33}}\n\n',
+      );
+      response.end('data: [DONE]\n\n');
       return;
     }
 
@@ -410,7 +446,7 @@ test(
     assert.equal(priceBody.suggestedPrice, 512345);
     assert.equal(priceBody.currency, 'RUB');
 
-    const chatResult = await fetchJson(`${address}/api/ai/chat`, {
+    const chatResponse = await fetch(`${address}/api/ai/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -419,17 +455,40 @@ test(
         item: aiItem,
         messages: [
           {
+            id: 'assistant-1',
             role: 'assistant',
-            content: 'Здравствуйте. Что для вас важно уточнить?',
+            parts: [
+              {
+                type: 'text',
+                text: 'Здравствуйте. Что для вас важно уточнить?',
+              },
+            ],
+          },
+          {
+            id: 'user-1',
+            role: 'user',
+            parts: [
+              {
+                type: 'text',
+                text: 'Подскажи, как коротко описать состояние товара.',
+              },
+            ],
           },
         ],
-        userMessage: 'Подскажи, как коротко описать состояние товара.',
       }),
     });
 
-    assert.equal(chatResult.response.status, 200);
+    const chatFrames = parseSseDataFrames(await readResponseStream(chatResponse));
+    const chatChunks = getUiMessageChunks(chatFrames);
+
+    assert.equal(chatResponse.status, 200);
+    assert.equal(chatResponse.headers.get('x-vercel-ai-ui-message-stream'), 'v1');
+    assert.equal(chatFrames.at(-1), '[DONE]');
     assert.match(
-      AiChatResponseSchema.parse(chatResult.body).message.content,
+      chatChunks
+        .filter(chunk => chunk.type === 'text-delta')
+        .map(chunk => String(chunk.delta ?? ''))
+        .join(''),
       /Smoke-ответ/,
     );
 
@@ -449,11 +508,11 @@ test(
           ? request.body.response_format.json_schema.name
           : null,
       ),
-      ['ai_description_response', 'ai_price_response', 'ai_chat_response'],
+      ['ai_description_response', 'ai_price_response', null],
     );
     assert.deepEqual(
       mockOpenRouter.requests.map(request => request.body.stream),
-      [false, false, false],
+      [false, false, true],
     );
   },
 );

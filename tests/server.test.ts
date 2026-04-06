@@ -12,11 +12,9 @@ import {
   resolveAiTimeoutMs,
 } from 'src/shared/config/app-config.ts';
 import { registerDevDelayPlugin } from 'src/app/plugins/dev-delay.plugin.ts';
-import { AiChatResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiDescriptionResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiPriceResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
 import { AiStatusResponseSchema } from 'src/modules/ai/contracts/ai-response.contract.ts';
-import { AiChatStreamEventSchema } from 'src/modules/ai/contracts/ai-stream.contract.ts';
 import { ItemReadDtoSchema } from 'src/modules/items/contracts/item-read.contract.ts';
 import {
   ItemsResponseSchema,
@@ -34,15 +32,36 @@ const validAiChatPayload = {
   item: items[0],
   messages: [
     {
+      id: 'assistant-1',
       role: 'assistant',
-      content: 'Здравствуйте. Уточните, что для вас важнее: цена или состояние?',
+      parts: [
+        {
+          type: 'text',
+          text: 'Здравствуйте. Уточните, что для вас важнее: цена или состояние?',
+        },
+      ],
     },
     {
       role: 'user',
-      content: 'Скорее состояние и прозрачная история.',
+      id: 'user-1',
+      parts: [
+        {
+          type: 'text',
+          text: 'Скорее состояние и прозрачная история.',
+        },
+      ],
+    },
+    {
+      id: 'user-2',
+      role: 'user',
+      parts: [
+        {
+          type: 'text',
+          text: 'Сформулируй короткий ответ для покупателя про состояние машины.',
+        },
+      ],
     },
   ],
-  userMessage: 'Сформулируй короткий ответ для покупателя про состояние машины.',
 };
 
 const invalidJsonPayload = '{"item":';
@@ -116,33 +135,41 @@ const waitForCondition = async (
   }
 };
 
-const parseSseEvents = (
-  rawBody: string,
-): Array<{ event: string; data: Record<string, unknown> }> =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const parseSseDataFrames = (rawBody: string): unknown[] =>
   rawBody
     .split('\n\n')
     .map(frame => frame.trim())
     .filter(Boolean)
     .map(frame => {
-      let event = 'message';
       let data = '';
 
       for (const line of frame.split('\n')) {
-        if (line.startsWith('event:')) {
-          event = line.slice('event:'.length).trim();
-          continue;
-        }
-
         if (line.startsWith('data:')) {
           data += `${data ? '\n' : ''}${line.slice('data:'.length).trimStart()}`;
         }
       }
 
-      return {
-        event,
-        data: JSON.parse(data) as Record<string, unknown>,
-      };
-    });
+      if (!data) {
+        return undefined;
+      }
+
+      return data === '[DONE]' ? data : (JSON.parse(data) as unknown);
+    })
+    .filter(frame => frame !== undefined);
+
+const getUiMessageChunks = (
+  frames: unknown[],
+): Array<Record<string, unknown> & { type: string }> =>
+  frames.filter(
+    (
+      frame,
+    ): frame is Record<string, unknown> & {
+      type: string;
+    } => isRecord(frame) && typeof frame.type === 'string',
+  );
 
 const createLogCapture = () => {
   const stream = new PassThrough();
@@ -1268,7 +1295,7 @@ test('POST /api/ai/price returns AI_PROVIDER_ERROR for invalid provider response
   );
 });
 
-test('POST /api/ai/chat returns normalized assistant message', async t => {
+test('POST /api/ai/chat streams AI SDK UI message chunks from UIMessage[] payload', async t => {
   const originalAiConfig = structuredClone(config.ai);
   config.ai = {
     ...originalAiConfig,
@@ -1286,31 +1313,25 @@ test('POST /api/ai/chat returns normalized assistant message', async t => {
 
   let capturedRequestBody: Record<string, unknown> | undefined;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (_input, init) => {
-    capturedRequestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+  globalThis.fetch = (async (input, init) => {
+    const requestUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
 
-    return createMockResponse({
-      id: 'gen-chat',
-      model: 'openrouter/test-model',
-      usage: {
-        prompt_tokens: 55,
-        completion_tokens: 18,
-        total_tokens: 73,
-      },
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              message: {
-                role: 'assistant',
-                content:
-                  'Состояние можно описать как аккуратное: автомобиль обслуживался, салон чистый, история понятная.',
-              },
-            }),
-          },
-        },
-      ],
-    });
+    if (requestUrl.includes('/chat/completions')) {
+      capturedRequestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+
+      return createMockSseResponse([
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"Состояние можно описать как аккуратное: "}}]}\n\n',
+        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"автомобиль обслуживался, салон чистый, история понятная."}}],"usage":{"prompt_tokens":55,"completion_tokens":18,"total_tokens":73}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
+    }
+
+    return originalFetch(input, init);
   }) as typeof fetch;
 
   t.after(() => {
@@ -1323,40 +1344,50 @@ test('POST /api/ai/chat returns normalized assistant message', async t => {
     await app.close();
   });
 
-  const response = await app.inject({
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  const response = await fetch(`${address}/api/ai/chat`, {
     method: 'POST',
-    url: '/api/ai/chat',
-    payload: validAiChatPayload,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(validAiChatPayload),
   });
 
-  assert.equal(response.statusCode, 200);
+  const rawBody = await readResponseStream(response);
+  const frames = parseSseDataFrames(rawBody);
+  const chunks = getUiMessageChunks(frames);
 
-  const body = AiChatResponseSchema.parse(response.json());
-
-  assert.deepEqual(body.message, {
-    role: 'assistant',
-    content:
-      'Состояние можно описать как аккуратное: автомобиль обслуживался, салон чистый, история понятная.',
-  });
-  assert.equal(body.model, 'openrouter/test-model');
-  assert.deepEqual(body.usage, {
-    inputTokens: 55,
-    outputTokens: 18,
-    totalTokens: 73,
-  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/i);
+  assert.equal(response.headers.get('x-vercel-ai-ui-message-stream'), 'v1');
+  assert.equal(frames.at(-1), '[DONE]');
+  assert.deepEqual(
+    chunks
+      .filter(chunk => chunk.type.startsWith('text-'))
+      .map(chunk => chunk.type),
+    ['text-start', 'text-delta', 'text-delta', 'text-end'],
+  );
+  assert.equal(
+    chunks
+      .filter(chunk => chunk.type === 'text-delta')
+      .map(chunk => String(chunk.delta ?? ''))
+      .join(''),
+    'Состояние можно описать как аккуратное: автомобиль обслуживался, салон чистый, история понятная.',
+  );
 
   const responseFormat = capturedRequestBody?.response_format as
     | { type?: string }
     | undefined;
 
-  assert.equal(responseFormat?.type, 'json_schema');
+  assert.equal(responseFormat, undefined);
+  assert.equal(capturedRequestBody?.stream, true);
   assert.equal(
     capturedRequestBody?.max_tokens,
     INPUT_LIMITS.ai.completionMaxTokens.chat,
   );
 });
 
-test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', async t => {
+test('POST /api/ai/chat returns VALIDATION_ERROR for invalid UI message role', async t => {
   const app = await buildApp();
 
   t.after(async () => {
@@ -1370,8 +1401,48 @@ test('POST /api/ai/chat returns VALIDATION_ERROR for invalid history role', asyn
       ...validAiChatPayload,
       messages: [
         {
-          role: 'system',
-          content: 'Нельзя принимать system из frontend.',
+          id: 'invalid-role',
+          role: 'tool',
+          parts: [
+            {
+              type: 'text',
+              text: 'Нельзя принимать tool role в UIMessage.',
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    ApiErrorResponseSchema.parse(response.json()).code,
+    'VALIDATION_ERROR',
+  );
+});
+
+test('POST /api/ai/chat returns VALIDATION_ERROR when no final user text message is present', async t => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/ai/chat',
+    payload: {
+      ...validAiChatPayload,
+      messages: [
+        {
+          id: 'assistant-only',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: 'Это сообщение не должно считаться user turn.',
+            },
+          ],
         },
       ],
     },
@@ -1430,113 +1501,7 @@ test('POST /api/ai/chat returns VALIDATION_ERROR for malformed JSON', async t =>
   );
 });
 
-test('POST /api/ai/chat streams backend-owned SSE events without provider-specific fields', async t => {
-  const originalAiConfig = structuredClone(config.ai);
-  config.ai = {
-    ...originalAiConfig,
-    enabled: true,
-    provider: 'openrouter',
-    openrouter: {
-      ...originalAiConfig.openrouter,
-      apiKey: 'test-openrouter-key',
-    },
-  };
-
-  t.after(() => {
-    config.ai = originalAiConfig;
-  });
-
-  let capturedRequestBody: Record<string, unknown> | undefined;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input, init) => {
-    const requestUrl =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-
-    if (requestUrl.includes('/chat/completions')) {
-      capturedRequestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-
-      return createMockSseResponse([
-        ': keep-alive\n\n',
-        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"role":"assistant"}}]}\n\n',
-        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"Состояние выглядит "}}]}\n\n',
-        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","choices":[{"delta":{"content":"аккуратным и ухоженным."}}]}\n\n',
-        'data: {"id":"gen-chat-stream","model":"openrouter/test-model","usage":{"prompt_tokens":55,"completion_tokens":18,"total_tokens":73},"choices":[]}\n\n',
-        'data: [DONE]\n\n',
-      ]);
-    }
-
-    return originalFetch(input, init);
-  }) as typeof fetch;
-
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  const app = await buildApp();
-
-  t.after(async () => {
-    await app.close();
-  });
-
-  const address = await app.listen({ port: 0, host: '127.0.0.1' });
-  const response = await fetch(`${address}/api/ai/chat`, {
-    method: 'POST',
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(validAiChatPayload),
-  });
-
-  const rawBody = await readResponseStream(response);
-  const events = parseSseEvents(rawBody).map(event =>
-    AiChatStreamEventSchema.parse(event),
-  );
-
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/i);
-  assert.deepEqual(
-    events.map(event => event.event),
-    ['meta', 'chunk', 'chunk', 'done'],
-  );
-  assert.deepEqual(events[0].data, {
-    model: 'openrouter/test-model',
-  });
-  assert.equal(
-    events
-      .filter(event => event.event === 'chunk')
-      .map(event => event.data.content)
-      .join(''),
-    'Состояние выглядит аккуратным и ухоженным.',
-  );
-  assert.deepEqual(events.at(-1)?.data, {
-    model: 'openrouter/test-model',
-    usage: {
-      inputTokens: 55,
-      outputTokens: 18,
-      totalTokens: 73,
-    },
-  });
-
-  for (const event of events) {
-    assert.equal('choices' in event.data, false);
-    assert.equal('delta' in event.data, false);
-    assert.equal('finish_reason' in event.data, false);
-    assert.equal('id' in event.data, false);
-  }
-
-  assert.equal(capturedRequestBody?.stream, true);
-  assert.equal(
-    capturedRequestBody?.max_tokens,
-    INPUT_LIMITS.ai.completionMaxTokens.chat,
-  );
-});
-
-test('POST /api/ai/chat emits SSE error event when provider stream becomes invalid', async t => {
+test('POST /api/ai/chat emits AI SDK error chunk when provider stream becomes invalid', async t => {
   const originalAiConfig = structuredClone(config.ai);
   config.ai = {
     ...originalAiConfig,
@@ -1585,27 +1550,20 @@ test('POST /api/ai/chat emits SSE error event when provider stream becomes inval
   const response = await fetch(`${address}/api/ai/chat`, {
     method: 'POST',
     headers: {
-      Accept: 'text/event-stream',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(validAiChatPayload),
   });
 
   const rawBody = await readResponseStream(response);
-  const events = parseSseEvents(rawBody).map(event =>
-    AiChatStreamEventSchema.parse(event),
-  );
+  const frames = parseSseDataFrames(rawBody);
+  const chunks = getUiMessageChunks(frames);
+  const errorChunk = chunks.find(chunk => chunk.type === 'error');
 
   assert.equal(response.status, 200);
-  assert.deepEqual(
-    events.map(event => event.event),
-    ['meta', 'chunk', 'error'],
-  );
-  assert.deepEqual(events.at(-1)?.data, {
-    success: false,
-    code: 'AI_PROVIDER_ERROR',
-    message: 'Failed to receive a valid response from AI provider.',
-  });
+  assert.equal(response.headers.get('x-vercel-ai-ui-message-stream'), 'v1');
+  assert.equal(frames.at(-1), '[DONE]');
+  assert.equal(errorChunk?.errorText, 'Failed to receive a valid response from AI provider.');
 });
 
 test('POST /api/ai/chat aborts the upstream stream after client disconnect', async t => {
@@ -1686,7 +1644,6 @@ test('POST /api/ai/chat aborts the upstream stream after client disconnect', asy
     method: 'POST',
     signal: abortController.signal,
     headers: {
-      Accept: 'text/event-stream',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(validAiChatPayload),
