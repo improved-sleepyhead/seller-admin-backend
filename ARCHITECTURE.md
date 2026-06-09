@@ -9,7 +9,7 @@
 - bootstrap приложения был отделён от бизнес-логики;
 - общие cross-cutting части были отделены от feature-кода;
 - логика `items` и `ai` жила в независимых модулях;
-- provider-specific детали OpenRouter не выходили за пределы AI-модуля;
+- provider-specific детали OpenRouter не выходили за пределы AI-модуля, а frontend-facing chat transport оставался совместимым с Vercel AI SDK UI message stream;
 - тесты находились отдельно от production-кода в `tests/`.
 
 ## Общая структура проекта
@@ -183,12 +183,12 @@ registerAiRoutes(app, { aiClient });
 
 ### `app/http`
 
-- `sse.ts` содержит SSE helper'ы и content-type utility;
-- `abort-on-disconnect.ts` отменяет upstream-работу, если клиент оборвал соединение.
+- `abort-on-disconnect.ts` отменяет upstream-работу, если клиент оборвал соединение;
+- `sse.ts` хранит низкоуровневые SSE helper'ы для ручных transport-сценариев, хотя текущий chat route использует AI SDK response piping.
 
 Правила:
 
-- жизненный цикл соединения и SSE transport detail живут здесь;
+- жизненный цикл соединения и transport helper'ы живут здесь;
 - feature-модули могут использовать эти helper'ы, но не должны дублировать их реализацию.
 
 ## Модуль `items`
@@ -275,15 +275,14 @@ HTTP adapter'ы для endpoint'ов `/items`.
 
 ### `ai/contracts`
 
-AI request/response/SSE контракты:
+AI request/response контракты:
 
 - `ai-request.contract.ts`
 - `ai-response.contract.ts`
-- `ai-stream.contract.ts`
 
 Правила:
 
-- это публичные frontend-facing AI-контракты;
+- это публичные frontend-facing AI-контракты для JSON endpoint'ов и chat request validation;
 - provider-specific response shape не должен протекать за эту границу.
 
 ### `ai/prompts`
@@ -345,6 +344,20 @@ Provider-specific transport implementation:
 - остальная часть приложения должна зависеть от `OpenRouterClient`, а не от raw payload detail'ов;
 - публичный API-контракт не должен напрямую переиспользовать provider response DTO.
 
+### Граница Vercel AI SDK
+
+Пакет `ai` используется только на frontend-facing chat transport boundary, а не как provider client:
+
+- `safeValidateUIMessages` валидирует входной `UIMessage[]` payload;
+- `createUIMessageStream` собирает backend-owned stream из нормализованных текстовых чанков;
+- `pipeUIMessageStreamToResponse` публикует ответ как AI SDK-compatible `text/event-stream`.
+
+Это означает:
+
+- backend по-прежнему сам строит prompts и сам вызывает OpenRouter;
+- provider-specific raw frames остаются внутри `openrouter.stream.ts`;
+- наружу уходит AI SDK UI message stream protocol с заголовком `x-vercel-ai-ui-message-stream: v1`, а не старый project-owned `event: chunk|done|error`.
+
 ### `ai/routes`
 
 HTTP adapter'ы для:
@@ -357,9 +370,10 @@ HTTP adapter'ы для:
 Ответственность:
 
 - валидировать request через contracts;
+- нормализовать AI SDK `UIMessage[]` и legacy chat payload в единый backend input;
 - использовать connection-abort helper'ы;
-- переключать JSON chat response и SSE streaming response;
-- переводить ошибки в стабильные публичные error DTO и SSE events.
+- для `POST /api/ai/chat` открывать `UIMessage` stream и pipe'ить его в `reply.raw`;
+- до открытия stream возвращать стабильные JSON error DTO, а после открытия stream полагаться на AI SDK-native error handling.
 
 Правила:
 
@@ -374,7 +388,7 @@ HTTP adapter'ы для:
 
 ### AI endpoint'ы
 
-`HTTP request -> ai routes -> ai contracts -> ai service -> prompt builders -> OpenRouter client -> ai normalization -> public DTO/SSE event`
+`HTTP request -> ai routes -> ai contracts/UIMessage normalization -> ai service -> prompt builders -> OpenRouter client -> provider text deltas -> AI SDK UI message stream or normalized JSON DTO`
 
 ## Направление зависимостей
 
@@ -406,7 +420,7 @@ HTTP adapter'ы для:
 - `PATCH /items/:id` возвращает `{ success: true }` при успехе;
 - все ошибки возвращают `{ success: false, code, message, details? }`;
 - AI endpoint'ы возвращают backend-normalized ответы, а не raw OpenRouter payload'ы;
-- streaming chat отдаёт backend-owned SSE events, а не provider frame'ы.
+- streaming chat отдаёт Vercel AI SDK UI message stream с backend-owned текстовыми чанками и не прокидывает raw provider frame'ы наружу.
 
 ## Структура тестов
 
